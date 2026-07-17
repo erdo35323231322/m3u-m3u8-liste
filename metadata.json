@@ -1,0 +1,6 @@
+{
+  "name": "Android M3U Listesi Olusturucu",
+  "description": "Android cihazlar icin optimize edilmis, TV ve radyo yayinlarini oynatabilen, m3u/m3u8 listeleri olusturan ve duzenleyen gelismis playlist uygulamasi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
