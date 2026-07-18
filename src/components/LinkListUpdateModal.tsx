@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, RefreshCw, CheckCircle2, AlertTriangle, Search, 
-  Check, Globe, Wifi, ShieldCheck, Sparkles, AlertCircle
+  Check, Globe, Wifi, ShieldCheck, Sparkles, AlertCircle, Trash2
 } from 'lucide-react';
 import { PlaylistItem } from '../types';
 
@@ -23,6 +23,8 @@ export default function LinkListUpdateModal({
   const [updatedCount, setUpdatedCount] = useState(0);
   const [verifiedCount, setVerifiedCount] = useState(0);
   const [failedCount, setFailedCount] = useState(0);
+  const [deletedCount, setDeletedCount] = useState(0);
+  const [autoDeletePassive, setAutoDeletePassive] = useState(true);
   const [currentChannelName, setCurrentChannelName] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -34,6 +36,7 @@ export default function LinkListUpdateModal({
       setUpdatedCount(0);
       setVerifiedCount(0);
       setFailedCount(0);
+      setDeletedCount(0);
       setCurrentChannelName('');
       setError(null);
     }
@@ -51,6 +54,7 @@ export default function LinkListUpdateModal({
     setUpdatedCount(0);
     setVerifiedCount(0);
     setFailedCount(0);
+    setDeletedCount(0);
 
     const workingList = [...items];
 
@@ -86,16 +90,31 @@ export default function LinkListUpdateModal({
           }
         } else {
           setFailedCount(prev => prev + 1);
+          workingList[i] = {
+            ...item,
+            status: 'broken'
+          };
         }
       } catch (err) {
         console.error(`Error updating link for ${item.name}:`, err);
         setFailedCount(prev => prev + 1);
+        workingList[i] = {
+          ...item,
+          status: 'broken'
+        };
       }
 
       setProcessedCount(i + 1);
     }
 
-    onUpdateItems(workingList);
+    if (autoDeletePassive) {
+      const activeList = workingList.filter(item => item.status !== 'broken');
+      const removed = workingList.length - activeList.length;
+      setDeletedCount(removed);
+      onUpdateItems(activeList);
+    } else {
+      onUpdateItems(workingList);
+    }
     setStep('completed');
   };
 
@@ -153,14 +172,31 @@ export default function LinkListUpdateModal({
                 </p>
               </div>
 
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 text-left space-y-2 max-w-sm mx-auto">
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 text-left space-y-3 max-w-sm mx-auto">
                 <div className="flex items-center space-x-2 text-xs text-slate-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                   <span>Toplam taranacak kanal: <strong className="text-white font-mono">{totalItems}</strong></span>
                 </div>
                 <div className="flex items-center space-x-2 text-xs text-slate-400">
                   <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
                   <span>Otomatik canlı yayın doğrulama aktif</span>
+                </div>
+                
+                {/* Auto Delete Toggle */}
+                <div className="border-t border-slate-900 pt-2.5 flex items-start space-x-2.5">
+                  <input 
+                    type="checkbox"
+                    id="autoDeletePassive"
+                    checked={autoDeletePassive}
+                    onChange={(e) => setAutoDeletePassive(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-700 bg-slate-900 text-rose-500 focus:ring-rose-500 cursor-pointer w-4 h-4"
+                  />
+                  <label htmlFor="autoDeletePassive" className="text-slate-300 text-[11px] font-medium cursor-pointer leading-relaxed">
+                    <span className="font-bold text-rose-400 flex items-center gap-1">
+                      <Trash2 className="w-3.5 h-3.5" /> Pasif Kanalları Otomatik Sil
+                    </span>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Bağlantısı çalışmayan, kırık veya kapalı olan kanalları tarama sonrasında listeden kalıcı olarak temizler.</p>
+                  </label>
                 </div>
               </div>
 
@@ -267,9 +303,9 @@ export default function LinkListUpdateModal({
               </div>
 
               {/* Summary Stats Card */}
-              <div className="bg-slate-950 border border-slate-850 rounded-xl p-4 divide-y divide-slate-900 max-w-sm mx-auto text-left text-xs">
+              <div className="bg-slate-950 border border-slate-850 rounded-xl p-4 divide-y divide-slate-900 max-w-sm mx-auto text-left text-xs space-y-1">
                 <div className="flex justify-between py-2">
-                  <span className="text-slate-400">Toplam Kanal Sayısı:</span>
+                  <span className="text-slate-400">İşlem Öncesi Toplam Kanal:</span>
                   <span className="text-white font-mono font-bold">{totalItems}</span>
                 </div>
                 <div className="flex justify-between py-2">
@@ -292,6 +328,21 @@ export default function LinkListUpdateModal({
                     Pasif / Kırık Çevrimdışı Linkler:
                   </span>
                   <span className="text-rose-400 font-mono font-bold">{failedCount}</span>
+                </div>
+                {autoDeletePassive && (
+                  <div className="flex justify-between py-2 bg-rose-950/20 px-2 rounded mt-1.5 border border-rose-500/10">
+                    <span className="text-rose-300 font-bold flex items-center gap-1.5">
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Listeden Silinen Pasif Kanal:
+                    </span>
+                    <span className="text-rose-400 font-mono font-bold">{deletedCount} Adet</span>
+                  </div>
+                )}
+                <div className="flex justify-between py-2.5 text-[11px] font-bold border-t border-slate-800">
+                  <span className="text-slate-300">Güncel Kalan Kanal Sayısı:</span>
+                  <span className="text-emerald-400 font-mono">
+                    {autoDeletePassive ? (totalItems - deletedCount) : totalItems}
+                  </span>
                 </div>
               </div>
 

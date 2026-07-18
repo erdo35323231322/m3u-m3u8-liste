@@ -9,13 +9,15 @@ interface SoftwareUpdateModalProps {
   onClose: () => void;
   currentVersion: string;
   onUpdateSuccess: (newVersion: string) => void;
+  onRestart?: () => void;
 }
 
 export default function SoftwareUpdateModal({ 
   isOpen, 
   onClose, 
   currentVersion, 
-  onUpdateSuccess 
+  onUpdateSuccess,
+  onRestart
 }: SoftwareUpdateModalProps) {
   const [step, setStep] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'applying' | 'success'>('idle');
   const [apkStep, setApkStep] = useState<'idle' | 'preparing' | 'ready'>('idle');
@@ -31,11 +33,40 @@ export default function SoftwareUpdateModal({
   const [forceOverwrite, setForceOverwrite] = useState(true);
   const [overwriteLogs, setOverwriteLogs] = useState<string[]>([]);
   const [currentLog, setCurrentLog] = useState('');
+  const [countdown, setCountdown] = useState(3);
+  const [activeTab, setActiveTab] = useState<'system' | 'apk'>('system');
+
+  // Auto-restart timer when update is successful
+  useEffect(() => {
+    if (step === 'success') {
+      setCountdown(3);
+      const timer = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            if (onRestart) {
+              onRestart();
+            } else {
+              try {
+                window.location.replace(window.location.href);
+              } catch (e) {
+                window.location.reload();
+              }
+            }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [step, onRestart]);
 
   // Check update on open
   useEffect(() => {
     if (isOpen) {
       handleCheckUpdate();
+      setActiveTab('system');
     } else {
       // Reset states when closed
       setStep('idle');
@@ -44,6 +75,7 @@ export default function SoftwareUpdateModal({
       setProgress(0);
       setOverwriteLogs([]);
       setCurrentLog('');
+      setCountdown(3);
     }
   }, [isOpen]);
 
@@ -171,6 +203,46 @@ export default function SoftwareUpdateModal({
           </button>
         </div>
 
+        {/* Dynamic Navigation Tabs with Pulsing Notification Icons */}
+        <div className="flex border-b border-slate-800 bg-slate-950 px-4 pt-1 shrink-0">
+          <button
+            onClick={() => setActiveTab('system')}
+            className={`flex items-center space-x-2 px-4 py-3.5 border-b-2 text-xs font-bold transition cursor-pointer relative ${
+              activeTab === 'system'
+                ? 'border-indigo-500 text-indigo-400 bg-indigo-500/5'
+                : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-900/50'
+            }`}
+          >
+            <Cpu className="w-4 h-4 text-blue-400" />
+            <span>Sistem Güncelleme</span>
+            {currentVersion !== 'v2.5.0' && (
+              <span className="flex h-2 w-2 relative ml-1">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+              </span>
+            )}
+          </button>
+          
+          <button
+            onClick={() => setActiveTab('apk')}
+            className={`flex items-center space-x-2 px-4 py-3.5 border-b-2 text-xs font-bold transition cursor-pointer relative ${
+              activeTab === 'apk'
+                ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
+                : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-900/50'
+            }`}
+          >
+            <Smartphone className="w-4 h-4 text-emerald-400" />
+            <span>Android APK Paketleme</span>
+            <span className="bg-emerald-500/10 text-emerald-400 text-[8px] font-bold px-1.5 py-0.25 rounded font-mono ml-1.5">
+              SDK 33
+            </span>
+            <span className="flex h-1.5 w-1.5 relative ml-1">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-indigo-500"></span>
+            </span>
+          </button>
+        </div>
+
         {/* Content */}
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
           
@@ -190,234 +262,264 @@ export default function SoftwareUpdateModal({
             </div>
           )}
 
-          {/* SÜREÇ 1: YAZILIM GÜNCELLEME */}
-          <div className="bg-slate-950 border border-slate-850 rounded-xl p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-900 pb-3">
-              <div className="flex items-center space-x-2">
-                <Cpu className="w-4 h-4 text-blue-400" />
-                <span className="text-white font-bold text-xs">Yazılım Otomatik Güncelleme (Cihaz/Bulut)</span>
+          {activeTab === 'system' && (
+            <div className="bg-slate-950 border border-slate-850 rounded-xl p-5 space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+                <div className="flex items-center space-x-2">
+                  <div className="relative">
+                    <Cpu className="w-4 h-4 text-blue-400" />
+                    {currentVersion !== 'v2.5.0' && (
+                      <span className="absolute -top-1 -right-1 flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-white font-bold text-xs">Yazılım Otomatik Güncelleme (Cihaz/Bulut)</span>
+                </div>
+                <span className="text-[10px] bg-blue-500/10 border border-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full font-mono">
+                  Mevcut: {currentVersion}
+                </span>
               </div>
-              <span className="text-[10px] bg-blue-500/10 border border-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full font-mono">
-                Mevcut: {currentVersion}
-              </span>
-            </div>
 
-            {step === 'checking' && (
-              <div className="py-8 flex flex-col items-center justify-center space-y-3 text-center">
-                <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
-                <p className="text-xs text-slate-400">Bulut sunucusundaki uygulama dosyaları analiz ediliyor...</p>
-                <p className="text-[10px] text-slate-600 font-mono">Kaynak: https://ai.studio/apps/b99e682f-10ba-45b2-9ce5-6f5744711b43</p>
-              </div>
-            )}
+              {step === 'checking' && (
+                <div className="py-8 flex flex-col items-center justify-center space-y-3 text-center">
+                  <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
+                  <p className="text-xs text-slate-400">Bulut sunucusundaki uygulama dosyaları analiz ediliyor...</p>
+                  <p className="text-[10px] text-slate-600 font-mono">Kaynak: https://ai.studio/apps/b99e682f-10ba-45b2-9ce5-6f5744711b43</p>
+                </div>
+              )}
 
-            {step === 'available' && updateInfo && (
-              <div className="space-y-4 animate-fade-in">
-                <div className="bg-indigo-950/20 border border-indigo-900/30 rounded-xl p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <p className="text-white font-bold text-xs flex items-center gap-1.5">
-                        <Sparkles className="w-4 h-4 text-indigo-400 fill-current" />
-                        Yeni Sürüm Bulundu: {updateInfo.latestVersion}
-                      </p>
-                      <p className="text-[10px] text-slate-400">Boyut: {updateInfo.size} | Kaynak dosyalar güncel ve indirilmeye hazır.</p>
+              {step === 'available' && updateInfo && (
+                <div className="space-y-4 animate-fade-in">
+                  <div className="bg-indigo-950/20 border border-indigo-900/30 rounded-xl p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <p className="text-white font-bold text-xs flex items-center gap-1.5">
+                          <Sparkles className="w-4 h-4 text-indigo-400 fill-current" />
+                          Yeni Sürüm Bulundu: {updateInfo.latestVersion}
+                        </p>
+                        <p className="text-[10px] text-slate-400">Boyut: {updateInfo.size} | Kaynak dosyalar güncel ve indirilmeye hazır.</p>
+                      </div>
+                      <button
+                        onClick={handleApplyUpdate}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs transition shadow-lg cursor-pointer flex items-center space-x-1.5 shrink-0"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Şimdi Otomatik Güncelle</span>
+                      </button>
                     </div>
-                    <button
-                      onClick={handleApplyUpdate}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs transition shadow-lg cursor-pointer flex items-center space-x-1.5 shrink-0"
+
+                    {/* Overwrite Choice */}
+                    <div className="border-t border-indigo-900/40 pt-3 flex items-start space-x-3 text-xs">
+                      <input 
+                        type="checkbox"
+                        id="forceOverwrite"
+                        checked={forceOverwrite}
+                        onChange={(e) => setForceOverwrite(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                      />
+                      <label htmlFor="forceOverwrite" className="text-slate-300 font-medium cursor-pointer">
+                        <span className="font-bold text-emerald-400">Mevcut Sistem Dosyalarının Üzerine Yaz (Force Overwrite)</span>
+                        <p className="text-[10px] text-slate-500 leading-relaxed mt-0.5">En son sürüm kaynak kodlarını, server.ts, App.tsx ve M3uListPreview.tsx gibi ana bileşen dosyalarının üzerine doğrudan yazar. Eski dosyaları tamamen günceller.</p>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="text-slate-300 font-semibold text-xs uppercase tracking-wider">Yama ve Güncelleme Detayları:</h4>
+                    <ul className="space-y-1.5">
+                      {updateInfo.releaseNotes.map((note, index) => (
+                        <li key={index} className="text-slate-400 text-xs flex items-start space-x-2">
+                          <span className="text-indigo-400 shrink-0 mt-0.5">▪</span>
+                          <span>{note}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {step === 'downloading' && (
+                <div className="space-y-3 py-4">
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>Yeni uygulama paket dosyaları indiriliyor...</span>
+                    <span className="font-mono font-bold text-white">{progress}%</span>
+                  </div>
+                  <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-800">
+                    <div 
+                      className="bg-indigo-500 h-full rounded-full transition-all duration-150"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <p className="text-[9px] text-slate-600 font-mono text-center">İndirilen: https://ai.studio/apps/b99e682f-10ba-45b2-9ce5-6f5744711b43/files</p>
+                </div>
+              )}
+
+              {step === 'applying' && (
+                <div className="space-y-4 py-2 animate-fade-in">
+                  <div className="flex flex-col items-center justify-center space-y-2.5 text-center">
+                    <RefreshCw className="w-6 h-6 text-emerald-500 animate-spin" />
+                    <p className="text-xs text-slate-300 font-semibold">İndirilen yama dosyaları derlenip entegre ediliyor...</p>
+                    <p className="text-[10px] text-slate-500">Mevcut sistem dosyalarının üzerine yazma (Overwrite) işlemi başlatıldı.</p>
+                  </div>
+
+                  {/* Overwrite Log console */}
+                  <div className="bg-slate-950 border border-slate-900 rounded-xl p-3.5 font-mono text-[10px] text-slate-400 space-y-1 max-h-[160px] overflow-y-auto shadow-inner">
+                    {overwriteLogs.map((log, index) => (
+                      <div key={index} className={`flex items-start gap-1.5 py-0.5 ${
+                        log.includes('[OVERWRITE]') ? 'text-emerald-400' : log.includes('[SİSTEM]') ? 'text-indigo-400 font-bold' : 'text-slate-400'
+                      }`}>
+                        <span className="text-slate-600 shrink-0 select-none">❯</span>
+                        <span>{log}</span>
+                      </div>
+                    ))}
+                    <div className="h-1 animate-pulse bg-emerald-500/20 rounded-full mt-1.5" />
+                  </div>
+                </div>
+              )}
+
+              {step === 'success' && (
+                <div className="py-6 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 text-center flex flex-col items-center justify-center space-y-3">
+                  <div className="relative">
+                    <CheckCircle2 className="w-12 h-12 text-emerald-400 animate-pulse" />
+                    <span className="absolute -top-1 -right-1 bg-indigo-500 text-white font-mono text-[9px] font-bold px-1.5 py-0.5 rounded-full animate-bounce">
+                      {countdown}s
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-emerald-300 font-bold text-sm">Yazılım Başarıyla Güncellendi!</p>
+                    <p className="text-xs text-slate-400">Uygulama başarıyla son kararlı sürüme ({updateInfo?.latestVersion || 'v2.5.0'}) güncellenmiştir.</p>
+                    <div className="mt-3 bg-indigo-950/40 border border-indigo-500/20 rounded-lg py-1.5 px-3 inline-flex items-center gap-2 text-[11px] text-indigo-300 font-medium">
+                      <RefreshCw className="w-3 h-3 animate-spin text-indigo-400" />
+                      <span>Uygulama {countdown} saniye içinde otomatik olarak yeniden başlatılacak...</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (onRestart) {
+                        onRestart();
+                      } else {
+                        try {
+                          window.location.replace(window.location.href);
+                        } catch (e) {
+                          window.location.reload();
+                        }
+                      }
+                    }}
+                    className="mt-1 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded text-xs transition cursor-pointer"
+                  >
+                    Şimdi Yeniden Başlat
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'apk' && (
+            <div className="bg-slate-950 border border-slate-850 rounded-xl p-5 space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+                <div className="flex items-center space-x-2">
+                  <div className="relative">
+                    <Smartphone className="w-4 h-4 text-emerald-400" />
+                    <span className="absolute -top-1 -right-1 flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-indigo-500"></span>
+                    </span>
+                  </div>
+                  <span className="text-white font-bold text-xs">Android APK Derleme & Paketleme</span>
+                </div>
+                <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-mono">
+                  Android SDK 33
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-400 leading-relaxed">
+                StreamLink Studio, Android platformuyla %100 uyumludur. Uygulamayı Android TV veya Mobil telefonunuzda kullanmak üzere APK dosyası oluşturmaya hazırlayabilir ve doğrudan indirebilirsiniz.
+              </p>
+
+              {apkStep === 'idle' && (
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                  <button
+                    onClick={handlePrepareApk}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition flex items-center justify-center space-x-2 cursor-pointer shadow-lg border-b-2 border-emerald-800 active:border-b-0 active:translate-y-0.5"
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    <span>APK Dosyasını Derle ve İndir</span>
+                  </button>
+                  <span className="text-[10px] text-slate-500 font-mono">Derleme süresi: ~15 Saniye</span>
+                </div>
+              )}
+
+              {apkStep === 'preparing' && (
+                <div className="space-y-3">
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>Android derleme ortamı kuruluyor ve Gradle yapılandırılıyor...</span>
+                    <span className="font-mono font-bold text-white">{progress}%</span>
+                  </div>
+                  <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-800">
+                    <div 
+                      className="bg-emerald-500 h-full rounded-full transition-all duration-150"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <div className="bg-slate-900 p-2.5 rounded border border-slate-850 text-[9px] font-mono text-slate-500 space-y-0.5">
+                    <p>{progress > 10 && "> Fetching capacitor dependencies..."}</p>
+                    <p>{progress > 30 && "> Building production bundle (vite build)..."}</p>
+                    <p>{progress > 60 && "> Syncing assets to android/app/src/main/assets/public..."}</p>
+                    <p>{progress > 85 && "> Running assembleRelease with Gradle daemon..."}</p>
+                  </div>
+                </div>
+              )}
+
+              {apkStep === 'ready' && (
+                <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 space-y-4 animate-fade-in">
+                  <div className="flex items-start space-x-3 text-xs text-emerald-300">
+                    <Check className="w-5 h-5 shrink-0 bg-emerald-500/10 rounded-full p-1 border border-emerald-500/30" />
+                    <div className="space-y-1">
+                      <p className="font-bold">Android APK Derleme Başarıyla Tamamlandı!</p>
+                      <p className="text-slate-400 text-[11px]">StreamLinkStudio_v2.5.0_release.apk dosyası indirilmeye hazır hale getirilmiştir.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2.5">
+                    <a
+                      href="/api/download-apk"
+                      download="StreamLinkStudio_v2.5.0_release.apk"
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition cursor-pointer flex items-center justify-center space-x-2 shadow-lg"
                     >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Şimdi Otomatik Güncelle</span>
+                      <Download className="w-4 h-4" />
+                      <span>APK Dosyasını İndir</span>
+                    </a>
+
+                    <button
+                      onClick={() => setApkStep('idle')}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-lg text-xs transition cursor-pointer flex items-center justify-center"
+                    >
+                      Yeniden Derle
                     </button>
                   </div>
 
-                  {/* Overwrite Choice */}
-                  <div className="border-t border-indigo-900/40 pt-3 flex items-start space-x-3 text-xs">
-                    <input 
-                      type="checkbox"
-                      id="forceOverwrite"
-                      checked={forceOverwrite}
-                      onChange={(e) => setForceOverwrite(e.target.checked)}
-                      className="mt-0.5 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
-                    />
-                    <label htmlFor="forceOverwrite" className="text-slate-300 font-medium cursor-pointer">
-                      <span className="font-bold text-emerald-400">Mevcut Sistem Dosyalarının Üzerine Yaz (Force Overwrite)</span>
-                      <p className="text-[10px] text-slate-500 leading-relaxed mt-0.5">En son sürüm kaynak kodlarını, server.ts, App.tsx ve M3uListPreview.tsx gibi ana bileşen dosyalarının üzerine doğrudan yazar. Eski dosyaları tamamen günceller.</p>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <h4 className="text-slate-300 font-semibold text-xs uppercase tracking-wider">Yama ve Güncelleme Detayları:</h4>
-                  <ul className="space-y-1.5">
-                    {updateInfo.releaseNotes.map((note, index) => (
-                      <li key={index} className="text-slate-400 text-xs flex items-start space-x-2">
-                        <span className="text-indigo-400 shrink-0 mt-0.5">▪</span>
-                        <span>{note}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-
-            {step === 'downloading' && (
-              <div className="space-y-3 py-4">
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>Yeni uygulama paket dosyaları indiriliyor...</span>
-                  <span className="font-mono font-bold text-white">{progress}%</span>
-                </div>
-                <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-800">
-                  <div 
-                    className="bg-indigo-500 h-full rounded-full transition-all duration-150"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-                <p className="text-[9px] text-slate-600 font-mono text-center">İndirilen: https://ai.studio/apps/b99e682f-10ba-45b2-9ce5-6f5744711b43/files</p>
-              </div>
-            )}
-
-            {step === 'applying' && (
-              <div className="space-y-4 py-2 animate-fade-in">
-                <div className="flex flex-col items-center justify-center space-y-2.5 text-center">
-                  <RefreshCw className="w-6 h-6 text-emerald-500 animate-spin" />
-                  <p className="text-xs text-slate-300 font-semibold">İndirilen yama dosyaları derlenip entegre ediliyor...</p>
-                  <p className="text-[10px] text-slate-500">Mevcut sistem dosyalarının üzerine yazma (Overwrite) işlemi başlatıldı.</p>
-                </div>
-
-                {/* Overwrite Log console */}
-                <div className="bg-slate-950 border border-slate-900 rounded-xl p-3.5 font-mono text-[10px] text-slate-400 space-y-1 max-h-[160px] overflow-y-auto shadow-inner">
-                  {overwriteLogs.map((log, index) => (
-                    <div key={index} className={`flex items-start gap-1.5 py-0.5 ${
-                      log.includes('[OVERWRITE]') ? 'text-emerald-400' : log.includes('[SİSTEM]') ? 'text-indigo-400 font-bold' : 'text-slate-400'
-                    }`}>
-                      <span className="text-slate-600 shrink-0 select-none">❯</span>
-                      <span>{log}</span>
+                  <div className="bg-slate-900 border border-slate-850 rounded-xl p-3.5 space-y-2 text-xs">
+                    <p className="text-slate-300 font-semibold flex items-center gap-1.5">
+                      <Code className="w-3.5 h-3.5 text-indigo-400" />
+                      Yerel Bilgisayarınızda Manuel Derleme Yapmak İçin:
+                    </p>
+                    <div className="bg-slate-950 p-2.5 rounded font-mono text-[10px] text-slate-400 space-y-1 select-all">
+                      <p className="text-slate-500"># 1. Projeyi ZIP olarak indirin ve açın</p>
+                      <p className="text-emerald-400">npm install</p>
+                      <p className="text-emerald-400">npm run build</p>
+                      <p className="text-slate-500"># 2. Capacitor Android ekleyin ve çalıştırın</p>
+                      <p className="text-emerald-400">npx cap init StreamLinkStudio com.streamlink.studio --web-dir=dist</p>
+                      <p className="text-emerald-400">npx cap add android</p>
+                      <p className="text-emerald-400">npx cap sync</p>
+                      <p className="text-emerald-400">npx cap open android</p>
                     </div>
-                  ))}
-                  <div className="h-1 animate-pulse bg-emerald-500/20 rounded-full mt-1.5" />
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {step === 'success' && (
-              <div className="py-6 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 text-center flex flex-col items-center justify-center space-y-3">
-                <CheckCircle2 className="w-10 h-10 text-emerald-400" />
-                <div className="space-y-1">
-                  <p className="text-emerald-300 font-bold text-sm">Yazılım Başarıyla Güncellendi!</p>
-                  <p className="text-xs text-slate-400">Uygulama başarıyla son kararlı sürüme ({updateInfo?.latestVersion || 'v2.5.0'}) güncellenmiştir.</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setStep('available');
-                    onClose();
-                    window.location.reload();
-                  }}
-                  className="mt-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded text-xs transition cursor-pointer"
-                >
-                  Sistemi Yeniden Başlat (Yenile)
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* SÜREÇ 2: ANDROID APK DERLEME HAZIRLIĞI */}
-          <div className="bg-slate-950 border border-slate-850 rounded-xl p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-900 pb-3">
-              <div className="flex items-center space-x-2">
-                <Smartphone className="w-4 h-4 text-emerald-400" />
-                <span className="text-white font-bold text-xs">Android APK Derleme & Paketleme</span>
-              </div>
-              <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-mono">
-                Android SDK 33
-              </span>
+              )}
             </div>
-
-            <p className="text-xs text-slate-400 leading-relaxed">
-              StreamLink Studio, Android platformuyla %100 uyumludur. Uygulamayı Android TV veya Mobil telefonunuzda kullanmak üzere APK dosyası oluşturmaya hazırlayabilir ve doğrudan indirebilirsiniz.
-            </p>
-
-            {apkStep === 'idle' && (
-              <div className="flex flex-col sm:flex-row items-center gap-3">
-                <button
-                  onClick={handlePrepareApk}
-                  className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition flex items-center justify-center space-x-2 cursor-pointer shadow-lg border-b-2 border-emerald-800 active:border-b-0 active:translate-y-0.5"
-                >
-                  <Smartphone className="w-4 h-4" />
-                  <span>APK Dosyasını Derle ve İndir</span>
-                </button>
-                <span className="text-[10px] text-slate-500 font-mono">Derleme süresi: ~15 Saniye</span>
-              </div>
-            )}
-
-            {apkStep === 'preparing' && (
-              <div className="space-y-3">
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>Android derleme ortamı kuruluyor ve Gradle yapılandırılıyor...</span>
-                  <span className="font-mono font-bold text-white">{progress}%</span>
-                </div>
-                <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-800">
-                  <div 
-                    className="bg-emerald-500 h-full rounded-full transition-all duration-150"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-                <div className="bg-slate-900 p-2.5 rounded border border-slate-850 text-[9px] font-mono text-slate-500 space-y-0.5">
-                  <p>{progress > 10 && "> Fetching capacitor dependencies..."}</p>
-                  <p>{progress > 30 && "> Building production bundle (vite build)..."}</p>
-                  <p>{progress > 60 && "> Syncing assets to android/app/src/main/assets/public..."}</p>
-                  <p>{progress > 85 && "> Running assembleRelease with Gradle daemon..."}</p>
-                </div>
-              </div>
-            )}
-
-            {apkStep === 'ready' && (
-              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 space-y-4 animate-fade-in">
-                <div className="flex items-start space-x-3 text-xs text-emerald-300">
-                  <Check className="w-5 h-5 shrink-0 bg-emerald-500/10 rounded-full p-1 border border-emerald-500/30" />
-                  <div className="space-y-1">
-                    <p className="font-bold">Android APK Derleme Başarıyla Tamamlandı!</p>
-                    <p className="text-slate-400 text-[11px]">StreamLinkStudio_v2.5.0_release.apk dosyası indirilmeye hazır hale getirilmiştir.</p>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-2.5">
-                  <a
-                    href="/api/download-apk"
-                    download="StreamLinkStudio_v2.5.0_release.apk"
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition cursor-pointer flex items-center justify-center space-x-2 shadow-lg"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>APK Dosyasını İndir</span>
-                  </a>
-
-                  <button
-                    onClick={() => setApkStep('idle')}
-                    className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-lg text-xs transition cursor-pointer flex items-center justify-center"
-                  >
-                    Yeniden Derle
-                  </button>
-                </div>
-
-                <div className="bg-slate-900 border border-slate-850 rounded-xl p-3.5 space-y-2 text-xs">
-                  <p className="text-slate-300 font-semibold flex items-center gap-1.5">
-                    <Code className="w-3.5 h-3.5 text-indigo-400" />
-                    Yerel Bilgisayarınızda Manuel Derleme Yapmak İçin:
-                  </p>
-                  <div className="bg-slate-950 p-2.5 rounded font-mono text-[10px] text-slate-400 space-y-1 select-all">
-                    <p className="text-slate-500"># 1. Projeyi ZIP olarak indirin ve açın</p>
-                    <p className="text-emerald-400">npm install</p>
-                    <p className="text-emerald-400">npm run build</p>
-                    <p className="text-slate-500"># 2. Capacitor Android ekleyin ve çalıştırın</p>
-                    <p className="text-emerald-400">npx cap init StreamLinkStudio com.streamlink.studio --web-dir=dist</p>
-                    <p className="text-emerald-400">npx cap add android</p>
-                    <p className="text-emerald-400">npx cap sync</p>
-                    <p className="text-emerald-400">npx cap open android</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-          </div>
+          )}
 
         </div>
 

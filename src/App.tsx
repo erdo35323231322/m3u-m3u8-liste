@@ -88,7 +88,80 @@ export default function App() {
   const [appVersion, setAppVersion] = useState(() => {
     return localStorage.getItem('streamlink_app_version') || 'v2.4.0';
   });
+  const [isRestarting, setIsRestarting] = useState(false);
+  const [restartTimeLeft, setRestartTimeLeft] = useState(3);
+
+  // Virtual system reboot/reload sequence
+  useEffect(() => {
+    if (isRestarting) {
+      const interval = setInterval(() => {
+        setRestartTimeLeft(prev => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            
+            // Try to hard reload securely
+            try {
+              window.location.replace(window.location.origin + window.location.pathname + window.location.search);
+            } catch (e) {
+              try {
+                window.location.href = window.location.href;
+              } catch (err) {
+                console.warn("Iframe reload blocked, falling back to virtual restart.");
+              }
+            }
+            
+            // Wait an additional 500ms to allow a reload, but if reload is blocked, automatically load back the updated UI!
+            setTimeout(() => {
+              setIsRestarting(false);
+              showNotification("Sistem Başarıyla Yeniden Başlatıldı (v2.5.0)!", "success");
+            }, 600);
+            
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [isRestarting]);
+
   const [notification, setNotification] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
+
+  const [deviceInfo, setDeviceInfo] = useState<{ type: string; label: string }>({
+    type: 'unknown',
+    label: 'Cihaz: Algılanıyor...'
+  });
+
+  // Automatically detect current device type on mount
+  useEffect(() => {
+    const ua = navigator.userAgent;
+    const width = window.innerWidth;
+    let label = 'Cihaz: Masaüstü Bilgisayar (Desktop)';
+    let type = 'desktop';
+
+    if (/SmartTV|AppleTV|GoogleTV|AndroidTV|Large Screen|HbbTV|Tizen|WebOS|Roku|Viera|DnaPlay|Cast/i.test(ua)) {
+      label = 'Cihaz: Android TV / Smart TV';
+      type = 'tv';
+    } else if (/iPad|PlayBook|Silk/i.test(ua) || (width >= 768 && width <= 1024)) {
+      label = 'Cihaz: Android Tablet / iPad';
+      type = 'tablet';
+    } else if (/Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua)) {
+      label = 'Cihaz: Mobil Telefon (Mobile)';
+      type = 'mobile';
+    }
+    setDeviceInfo({ type, label });
+  }, []);
+
+  // Trigger system update modal automatically on application startup if there is a pending update
+  useEffect(() => {
+    if (appVersion !== 'v2.5.0') {
+      const timer = setTimeout(() => {
+        setIsUpdateModalOpen(true);
+        showNotification("Sistem Güncellemesi Mevcut (v2.5.0)! Otomatik güncelleme penceresi açıldı.", "info");
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [appVersion]);
 
   // Auto hide notifications
   useEffect(() => {
@@ -144,11 +217,69 @@ export default function App() {
     showNotification(`"${stream.name}" önizleme oynatıcıya yüklendi.`, 'info');
   };
 
+  if (isRestarting) {
+    return (
+      <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center text-center p-6 z-[9999] min-h-screen select-none">
+        <div className="relative flex flex-col items-center max-w-md space-y-6 animate-fade-in">
+          <div className="relative">
+            <RefreshCw className="w-16 h-16 text-indigo-500 animate-spin" style={{ animationDuration: '1.5s' }} />
+            <div className="absolute inset-0 bg-indigo-500/10 blur-xl rounded-full" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-white font-bold text-lg tracking-tight">Sistem Yeniden Başlatılıyor</h1>
+            <p className="text-slate-400 text-xs px-4">
+              Uygulama başarıyla yeni sürüme (<span className="text-indigo-400 font-bold">{appVersion}</span>) güncellendi.
+              Sistem önbelleği ve veritabanı eşitlemesi yenileniyor...
+            </p>
+          </div>
+          
+          <div className="flex flex-col items-center space-y-2 w-full">
+            <div className="w-48 bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+              <div 
+                className="bg-indigo-500 h-full rounded-full transition-all duration-1000" 
+                style={{ width: `${((3 - restartTimeLeft) / 3) * 100}%` }} 
+              />
+            </div>
+            <span className="text-[10px] text-indigo-400 font-mono font-bold">
+              Yeniden başlatılıyor: {restartTimeLeft}s
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 pt-2">
+            <button
+              onClick={() => {
+                setIsRestarting(false);
+                showNotification("Sanal Yeniden Başlatma Tamamlandı!", "success");
+              }}
+              className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white rounded text-[10px] font-bold transition cursor-pointer"
+            >
+              Yenilemeyi Atla ve Aç
+            </button>
+            <button
+              onClick={() => {
+                try {
+                  window.location.replace(window.location.origin + window.location.pathname + window.location.search);
+                } catch (e) {
+                  window.location.reload();
+                }
+              }}
+              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-bold transition cursor-pointer shadow-lg border-b-2 border-indigo-800"
+            >
+              Hemen Sayfayı Yenile
+            </button>
+          </div>
+
+          <p className="text-[10px] text-slate-600 font-mono pt-4">StreamLink Studio v2.5.0 © 2026</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-200 flex flex-col font-sans selection:bg-blue-600/30 selection:text-blue-400">
       
       {/* All Versions & Devices Update Notification Broadcast Banner */}
-      {appVersion === 'v2.4.0' && (
+      {appVersion !== 'v2.5.0' && (
         <div className="bg-gradient-to-r from-amber-600 via-rose-600 to-indigo-600 text-white px-4 py-2.5 text-center text-xs font-semibold relative flex flex-col sm:flex-row items-center justify-center gap-2 border-b border-rose-500/20 shadow-[0_4px_20px_rgba(225,29,72,0.2)] animate-pulse">
           <div className="flex items-center space-x-2">
             <span className="flex h-2 w-2 relative">
@@ -199,7 +330,7 @@ export default function App() {
               <div className="flex items-center space-x-2 justify-center sm:justify-start">
                 <h1 className="text-white font-bold tracking-tight text-lg">StreamLink Studio</h1>
                 <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">{appVersion}</span>
-                {appVersion === 'v2.4.0' && (
+                {appVersion !== 'v2.5.0' && (
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
@@ -219,7 +350,7 @@ export default function App() {
             >
               <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
               <span>Sistem & APK Güncelle</span>
-              {appVersion === 'v2.4.0' && (
+              {appVersion !== 'v2.5.0' && (
                 <span className="bg-indigo-500 text-white font-bold text-[8px] px-1.5 py-0.25 rounded">YENİ</span>
               )}
             </button>
@@ -235,9 +366,12 @@ export default function App() {
               </button>
             )}
 
-            <div className="bg-slate-900 px-3 py-1.5 rounded border border-slate-800 flex items-center space-x-2 text-xs">
-              <div className="w-2 h-2 bg-green-500 rounded-full" />
-              <span className="text-slate-400">Cihaz Hazır: Android TV / Mobile</span>
+            <div className="bg-slate-900 px-3 py-1.5 rounded border border-slate-800 flex items-center space-x-2 text-xs" title="Sistem tarafından otomatik algılanan aktif cihaz">
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="text-slate-300 font-medium">{deviceInfo.label}</span>
             </div>
             
             <a 
@@ -376,6 +510,11 @@ export default function App() {
           setAppVersion(newVersion);
           localStorage.setItem('streamlink_app_version', newVersion);
           showNotification(`Yazılım başarıyla ${newVersion} sürümüne güncellendi!`, 'success');
+        }}
+        onRestart={() => {
+          setIsUpdateModalOpen(false);
+          setIsRestarting(true);
+          setRestartTimeLeft(3);
         }}
       />
 

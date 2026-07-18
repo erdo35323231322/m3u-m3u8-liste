@@ -22,6 +22,31 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
   const [isRadio, setIsRadio] = useState(false);
   const hlsRef = useRef<Hls | null>(null);
 
+  const [aspectRatio, setAspectRatio] = useState<string>('Auto');
+  const [deviceInfo, setDeviceInfo] = useState<{ type: string; label: string; defaultRatio: string }>({
+    type: 'desktop',
+    label: 'Masaüstü (Desktop)',
+    defaultRatio: 'Auto'
+  });
+
+  // Automatically detect device and select recommended optimal aspect ratio on mount
+  useEffect(() => {
+    const ua = navigator.userAgent;
+    const width = window.innerWidth;
+    
+    let detected = { type: 'desktop', label: 'Masaüstü (Desktop)', defaultRatio: 'Auto' };
+    if (/SmartTV|AppleTV|GoogleTV|AndroidTV|Large Screen|HbbTV|Tizen|WebOS|Roku|Viera|DnaPlay|Cast/i.test(ua)) {
+      detected = { type: 'tv', label: 'Android TV / Smart TV', defaultRatio: '16:9' };
+    } else if (/iPad|PlayBook|Silk/i.test(ua) || (width >= 768 && width <= 1024)) {
+      detected = { type: 'tablet', label: 'Android Tablet / iPad', defaultRatio: 'Auto' };
+    } else if (/Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua)) {
+      detected = { type: 'mobile', label: 'Mobil Telefon (Mobile)', defaultRatio: 'Stretch' };
+    }
+    
+    setDeviceInfo(detected);
+    setAspectRatio(detected.defaultRatio);
+  }, []);
+
   // Predefined User-Agent Presets
   const userAgentPresets = [
     { name: 'VLC Media Player', value: 'VLC/3.0.18' },
@@ -272,10 +297,19 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
           </div>
         ) : (
           /* Video/TV Player Screen */
-          <div className="relative w-full h-full aspect-video flex items-center justify-center bg-black">
+          <div className={`relative w-full h-full flex items-center justify-center bg-black overflow-hidden transition-all duration-300 ${
+            aspectRatio === '16:9' ? 'aspect-[16/9]' :
+            aspectRatio === '4:3' ? 'aspect-[4/3]' :
+            aspectRatio === '21:9' ? 'aspect-[21/9]' :
+            'aspect-video'
+          }`}>
             <video 
               ref={videoRef} 
-              className="w-full h-full object-contain"
+              className={`w-full h-full transition-all duration-300 ${
+                aspectRatio === 'Stretch' ? 'object-fill' :
+                aspectRatio === 'Auto' ? 'object-contain' :
+                'object-cover'
+              }`}
               playsInline
               crossOrigin="anonymous"
               onClick={togglePlay}
@@ -388,6 +422,26 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
 
           {/* Right: Proxy option */}
           <div className="flex items-center gap-2">
+            {/* Dynamic Aspect Ratio Selector with Auto-Detected Indicator */}
+            <div className="flex items-center space-x-2 bg-slate-950 px-3 py-1.5 rounded border border-slate-800">
+              <span className="text-[11px] font-medium text-slate-400">En/Boy Oranı</span>
+              <select
+                value={aspectRatio}
+                onChange={(e) => setAspectRatio(e.target.value)}
+                className="bg-slate-900 border border-slate-800 text-slate-300 rounded px-2 py-0.5 text-[11px] focus:outline-none focus:border-blue-500 font-semibold cursor-pointer"
+                title={`Algılanan Cihaz Önerisi: ${deviceInfo.defaultRatio}`}
+              >
+                <option value="Auto">Orijinal (Auto)</option>
+                <option value="16:9">16:9 (Geniş TV)</option>
+                <option value="4:3">4:3 (Tüplü TV)</option>
+                <option value="21:9">21:9 (Sinema)</option>
+                <option value="Stretch">Ekrana Yay (Stretch)</option>
+              </select>
+              <span className="text-[9px] text-indigo-400 font-bold bg-indigo-500/10 border border-indigo-500/20 px-1 py-0.25 rounded font-mono" title="Sistem tarafından otomatik algılanan cihaz türü">
+                {deviceInfo.type === 'tv' ? 'TV' : deviceInfo.type === 'mobile' ? 'MOBİL' : deviceInfo.type === 'tablet' ? 'TABLET' : 'PC'}
+              </span>
+            </div>
+
             {useProxy && (
               <button
                 onClick={() => setShowProxyConfig(!showProxyConfig)}
