@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { PlaylistItem, Playlist } from './types';
 import IptvPlayer from './components/IptvPlayer';
 import BrowserInspector from './components/BrowserInspector';
-import ChannelPresets, { PRESET_CHANNELS } from './components/ChannelPresets';
+import SoftwareUpdateModal from './components/SoftwareUpdateModal';
 import M3uListPreview from './components/M3uListPreview';
-import { Tv, Radio, HelpCircle, Check, Sparkles, Shield, Compass, Heart } from 'lucide-react';
+import { Tv, Radio, HelpCircle, Check, Sparkles, Shield, Compass, Heart, Smartphone, RefreshCw } from 'lucide-react';
 import { findLogoForChannel } from './lib/logoDatabase';
 
 export default function App() {
@@ -82,7 +82,10 @@ export default function App() {
     logo: "https://upload.wikimedia.org/wikipedia/commons/e/e8/TRT_1_logo.svg"
   });
 
-  const [activeRightTab, setActiveRightTab] = useState<'presets' | 'inspector'>('presets');
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState(() => {
+    return localStorage.getItem('streamlink_app_version') || 'v2.4.0';
+  });
   const [notification, setNotification] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
 
   // Auto hide notifications
@@ -168,15 +171,33 @@ export default function App() {
             <div>
               <div className="flex items-center space-x-2 justify-center sm:justify-start">
                 <h1 className="text-white font-bold tracking-tight text-lg">StreamLink Studio</h1>
-                <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">v2.4.0</span>
+                <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">{appVersion}</span>
+                {appVersion === 'v2.4.0' && (
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                  </span>
+                )}
               </div>
               <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mt-0.5">Android M3U Optimizer</p>
             </div>
           </div>
 
           {/* Quick Platform Stats */}
-          <div className="flex items-center space-x-4">
-            <div className="bg-slate-900 px-3 py-1.5 rounded-full border border-slate-800 flex items-center space-x-2 text-xs">
+          <div className="flex items-center space-x-3 flex-wrap justify-center sm:justify-end gap-y-2">
+            <button
+              onClick={() => setIsUpdateModalOpen(true)}
+              className="px-3.5 py-1.5 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 hover:text-indigo-300 border border-indigo-500/20 rounded text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shrink-0"
+              title="Yazılımı otomatik güncelleyin veya Android APK dosyasını derleyip indirin"
+            >
+              <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
+              <span>Sistem & APK Güncelle</span>
+              {appVersion === 'v2.4.0' && (
+                <span className="bg-indigo-500 text-white font-bold text-[8px] px-1.5 py-0.25 rounded">YENİ</span>
+              )}
+            </button>
+
+            <div className="bg-slate-900 px-3 py-1.5 rounded border border-slate-800 flex items-center space-x-2 text-xs">
               <div className="w-2 h-2 bg-green-500 rounded-full" />
               <span className="text-slate-400">Cihaz Hazır: Android TV / Mobile</span>
             </div>
@@ -235,41 +256,15 @@ export default function App() {
             />
           </div>
 
-          {/* Right: 7 Columns for Presets & Advanced Web Inspectors */}
+          {/* Right: 7 Columns for Advanced Web Sniffer & Inspector */}
           <div className="lg:col-span-7 flex flex-col h-full space-y-4">
             
-            {/* Tab Header Selector */}
-            <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
-              <button
-                onClick={() => setActiveRightTab('presets')}
-                className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center space-x-2 cursor-pointer ${activeRightTab === 'presets' ? 'bg-slate-800 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
-              >
-                <Compass className="w-4 h-4" />
-                <span>Hazır Yayınlar Kütüphanesi</span>
-              </button>
-              
-              <button
-                onClick={() => setActiveRightTab('inspector')}
-                className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center space-x-2 cursor-pointer ${activeRightTab === 'inspector' ? 'bg-slate-800 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
-              >
-                <Sparkles className="w-4 h-4 fill-current" />
-                <span>Yayın Linki Sniffer / Yakalayıcı</span>
-              </button>
-            </div>
-
             {/* Active Workspace Component */}
             <div className="flex-1">
-              {activeRightTab === 'presets' ? (
-                <ChannelPresets 
-                  onSelectStream={handleSelectStream}
-                  onAddStreamToList={handleAddStream}
-                />
-              ) : (
-                <BrowserInspector 
-                  onSelectStream={handleSelectStream}
-                  onAddStreamToList={handleAddStream}
-                />
-              )}
+              <BrowserInspector 
+                onSelectStream={handleSelectStream}
+                onAddStreamToList={handleAddStream}
+              />
             </div>
 
           </div>
@@ -304,10 +299,22 @@ export default function App() {
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span> 
               SUNUCU BAĞLI
             </span>
-            <span>STREAMLINK V2.4.0</span>
+            <span>STREAMLINK {appVersion.toUpperCase()}</span>
           </div>
         </div>
       </footer>
+
+      {/* Software Update and APK Builder Modal */}
+      <SoftwareUpdateModal 
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+        currentVersion={appVersion}
+        onUpdateSuccess={(newVersion) => {
+          setAppVersion(newVersion);
+          localStorage.setItem('streamlink_app_version', newVersion);
+          showNotification(`Yazılım başarıyla ${newVersion} sürümüne güncellendi!`, 'success');
+        }}
+      />
 
     </div>
   );

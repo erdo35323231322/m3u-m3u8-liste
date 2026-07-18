@@ -12,7 +12,7 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [useProxy, setUseProxy] = useState(false);
+  const [useProxy, setUseProxy] = useState(true);
   const [proxyUserAgent, setProxyUserAgent] = useState('VLC/3.0.18');
   const [proxyReferer, setProxyReferer] = useState('');
   const [showProxyConfig, setShowProxyConfig] = useState(false);
@@ -99,15 +99,20 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
           if (data.fatal) {
             switch (data.type) {
               case Hls.ErrorTypes.NETWORK_ERROR:
-                setErrorMsg("Ağ hatası: Stream sunucusuna erişilemedi. Proxy seçeneğini aktifleştirmeyi deneyin.");
+                if (!useProxy) {
+                  setErrorMsg("Doğrudan bağlantı başarısız oldu. Güvenli Proxy modu otomatik olarak aktifleştirilip yeniden yükleniyor...");
+                  setUseProxy(true);
+                } else {
+                  setErrorMsg("Yayın sunucusuna bağlanılamadı. Link geçersiz/çevrimdışı olabilir, veya özel User-Agent doğrulaması gerektiriyor olabilir. Lütfen 'CORS Güvenli Proxy' altındaki dişli simgesinden 'TiviMate IPTV' veya 'VLC Media Player' ayarını deneyin.");
+                }
                 hls.startLoad();
                 break;
               case Hls.ErrorTypes.MEDIA_ERROR:
-                setErrorMsg("Medya hatası: Akış kodu çözülemedi.");
+                setErrorMsg("Medya hatası: Akış formatı veya video codec bileşenleri bu tarayıcıyla uyumsuz.");
                 hls.recoverMediaError();
                 break;
               default:
-                setErrorMsg("Yayın yüklenirken bir hata oluştu.");
+                setErrorMsg("Yayın yüklenirken bir sorun oluştu. Bağlantı adresi (URL) geçersiz, süresi dolmuş veya ülke dışı kısıtlamalı olabilir.");
                 hlsRef.current?.destroy();
                 break;
             }
@@ -121,6 +126,14 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
             .then(() => setIsPlaying(true))
             .catch(() => setIsPlaying(false));
         });
+        video.onerror = () => {
+          if (!useProxy) {
+            setUseProxy(true);
+            setErrorMsg("Güvenli Proxy modu otomatik olarak aktifleştiriliyor...");
+          } else {
+            setErrorMsg("Yayın yüklenemedi. Link çevrimdışı, şifreli ya da erişilemez durumda.");
+          }
+        };
       } else {
         setErrorMsg("Tarayıcınız HLS (.m3u8) yayınlarını desteklemiyor.");
       }
@@ -129,8 +142,25 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
       video.src = playUrl;
       video.load();
       video.play()
-        .then(() => setIsPlaying(true))
-        .catch(() => setIsPlaying(false));
+        .then(() => {
+          setIsPlaying(true);
+          setErrorMsg(null);
+        })
+        .catch(() => {
+          if (!useProxy) {
+            setUseProxy(true);
+            setErrorMsg("Proxy modu aktifleştirilip yeniden deneniyor...");
+          } else {
+            setErrorMsg("Medya başlatılamadı. Linki kontrol edin veya Proxy ayarlarından User-Agent değiştirmeyi deneyin.");
+          }
+        });
+      video.onerror = () => {
+        if (!useProxy) {
+          setUseProxy(true);
+        } else {
+          setErrorMsg("Yayın adresi yanıt vermedi veya video formatı desteklenmiyor.");
+        }
+      };
     }
 
     return () => {
@@ -158,7 +188,12 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
       })
       .catch((err) => {
         console.error("Audio error:", err);
-        setErrorMsg("Radyo yayını başlatılamadı. Linki kontrol edin veya Proxy seçeneğini açın.");
+        if (!useProxy) {
+          setUseProxy(true);
+          setErrorMsg("Radyo doğrudan bağlanamadı, Güvenli Proxy modu otomatik olarak aktifleştiriliyor...");
+        } else {
+          setErrorMsg("Radyo yayını başlatılamadı. Link geçersiz/çevrimdışı olabilir ya da tarayıcı formatıyla uyumsuz.");
+        }
         setIsPlaying(false);
       });
 
