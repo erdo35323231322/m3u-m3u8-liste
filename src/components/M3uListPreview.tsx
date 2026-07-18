@@ -415,7 +415,7 @@ export default function M3uListPreview({
           if (groupMatch) currentItem.group = groupMatch[1];
 
           // Determine type based on logo or group
-          const isRadio = (currentItem.group?.toLowerCase().includes('radio') || currentItem.group?.toLowerCase().includes('radyo'));
+          const isRadio = !!(currentItem.group && (currentItem.group.toLowerCase().includes('radio') || currentItem.group.toLowerCase().includes('radyo')));
           currentItem.type = isRadio ? 'radyo' : 'tv';
 
         } else if (!line.startsWith('#')) {

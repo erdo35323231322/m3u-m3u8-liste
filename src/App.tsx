@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { PlaylistItem, Playlist } from './types';
 import IptvPlayer from './components/IptvPlayer';
 import BrowserInspector from './components/BrowserInspector';
-import SoftwareUpdateModal from './components/SoftwareUpdateModal';
 import LinkListUpdateModal from './components/LinkListUpdateModal';
 import M3uListPreview from './components/M3uListPreview';
 import { Tv, Radio, HelpCircle, Check, Sparkles, Shield, Compass, Heart, Smartphone, RefreshCw } from 'lucide-react';
@@ -83,47 +82,10 @@ export default function App() {
     logo: "https://upload.wikimedia.org/wikipedia/commons/e/e8/TRT_1_logo.svg"
   });
 
-  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [isLinkUpdateModalOpen, setIsLinkUpdateModalOpen] = useState(false);
   const [appVersion, setAppVersion] = useState(() => {
-    return localStorage.getItem('streamlink_app_version') || 'v2.4.0';
+    return localStorage.getItem('streamlink_app_version') || 'v2.5.0';
   });
-  const [isRestarting, setIsRestarting] = useState(false);
-  const [restartTimeLeft, setRestartTimeLeft] = useState(3);
-
-  // Virtual system reboot/reload sequence
-  useEffect(() => {
-    if (isRestarting) {
-      const interval = setInterval(() => {
-        setRestartTimeLeft(prev => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            
-            // Try to hard reload securely
-            try {
-              window.location.replace(window.location.origin + window.location.pathname + window.location.search);
-            } catch (e) {
-              try {
-                window.location.href = window.location.href;
-              } catch (err) {
-                console.warn("Iframe reload blocked, falling back to virtual restart.");
-              }
-            }
-            
-            // Wait an additional 500ms to allow a reload, but if reload is blocked, automatically load back the updated UI!
-            setTimeout(() => {
-              setIsRestarting(false);
-              showNotification("Sistem Başarıyla Yeniden Başlatıldı (v2.5.0)!", "success");
-            }, 600);
-            
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [isRestarting]);
 
   const [notification, setNotification] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
 
@@ -151,17 +113,6 @@ export default function App() {
     }
     setDeviceInfo({ type, label });
   }, []);
-
-  // Trigger system update modal automatically on application startup if there is a pending update
-  useEffect(() => {
-    if (appVersion !== 'v2.5.0') {
-      const timer = setTimeout(() => {
-        setIsUpdateModalOpen(true);
-        showNotification("Sistem Güncellemesi Mevcut (v2.5.0)! Otomatik güncelleme penceresi açıldı.", "info");
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [appVersion]);
 
   // Auto hide notifications
   useEffect(() => {
@@ -217,92 +168,9 @@ export default function App() {
     showNotification(`"${stream.name}" önizleme oynatıcıya yüklendi.`, 'info');
   };
 
-  if (isRestarting) {
-    return (
-      <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center text-center p-6 z-[9999] min-h-screen select-none">
-        <div className="relative flex flex-col items-center max-w-md space-y-6 animate-fade-in">
-          <div className="relative">
-            <RefreshCw className="w-16 h-16 text-indigo-500 animate-spin" style={{ animationDuration: '1.5s' }} />
-            <div className="absolute inset-0 bg-indigo-500/10 blur-xl rounded-full" />
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-white font-bold text-lg tracking-tight">Sistem Yeniden Başlatılıyor</h1>
-            <p className="text-slate-400 text-xs px-4">
-              Uygulama başarıyla yeni sürüme (<span className="text-indigo-400 font-bold">{appVersion}</span>) güncellendi.
-              Sistem önbelleği ve veritabanı eşitlemesi yenileniyor...
-            </p>
-          </div>
-          
-          <div className="flex flex-col items-center space-y-2 w-full">
-            <div className="w-48 bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-              <div 
-                className="bg-indigo-500 h-full rounded-full transition-all duration-1000" 
-                style={{ width: `${((3 - restartTimeLeft) / 3) * 100}%` }} 
-              />
-            </div>
-            <span className="text-[10px] text-indigo-400 font-mono font-bold">
-              Yeniden başlatılıyor: {restartTimeLeft}s
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 pt-2">
-            <button
-              onClick={() => {
-                setIsRestarting(false);
-                showNotification("Sanal Yeniden Başlatma Tamamlandı!", "success");
-              }}
-              className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white rounded text-[10px] font-bold transition cursor-pointer"
-            >
-              Yenilemeyi Atla ve Aç
-            </button>
-            <button
-              onClick={() => {
-                try {
-                  window.location.replace(window.location.origin + window.location.pathname + window.location.search);
-                } catch (e) {
-                  window.location.reload();
-                }
-              }}
-              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-bold transition cursor-pointer shadow-lg border-b-2 border-indigo-800"
-            >
-              Hemen Sayfayı Yenile
-            </button>
-          </div>
-
-          <p className="text-[10px] text-slate-600 font-mono pt-4">StreamLink Studio v2.5.0 © 2026</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-slate-900 text-slate-200 flex flex-col font-sans selection:bg-blue-600/30 selection:text-blue-400">
       
-      {/* All Versions & Devices Update Notification Broadcast Banner */}
-      {appVersion !== 'v2.5.0' && (
-        <div className="bg-gradient-to-r from-amber-600 via-rose-600 to-indigo-600 text-white px-4 py-2.5 text-center text-xs font-semibold relative flex flex-col sm:flex-row items-center justify-center gap-2 border-b border-rose-500/20 shadow-[0_4px_20px_rgba(225,29,72,0.2)] animate-pulse">
-          <div className="flex items-center space-x-2">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-            </span>
-            <span className="font-bold tracking-wide">YAYIN GENELİ ACİL SİSTEM GÜNCELLEMESİ (v2.5.0):</span>
-            <span className="text-white/90">Tüm cihazlar ve eski sürümler için yeni sistem güncellemesi yayınlandı!</span>
-          </div>
-          <div className="flex items-center space-x-2 shrink-0">
-            <span className="bg-white/10 text-white text-[10px] px-2 py-0.5 rounded border border-white/15 font-mono">
-              FORCE OVERWRITE DESTEKLİ
-            </span>
-            <button
-              onClick={() => setIsUpdateModalOpen(true)}
-              className="bg-white text-slate-950 px-3 py-1 rounded font-bold text-[11px] hover:bg-slate-100 transition active:scale-95 shadow cursor-pointer shrink-0"
-            >
-              Şimdi Üzerine Yazarak Güncelle
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Dynamic Top Notification */}
       {notification && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 animate-bounce">
@@ -343,17 +211,14 @@ export default function App() {
 
           {/* Quick Platform Stats */}
           <div className="flex items-center space-x-3 flex-wrap justify-center sm:justify-end gap-y-2">
-            <button
-              onClick={() => setIsUpdateModalOpen(true)}
+            <a
+              href="/api/download-apk"
               className="px-3.5 py-1.5 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 hover:text-indigo-300 border border-indigo-500/20 rounded text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shrink-0"
-              title="Yazılımı otomatik güncelleyin veya Android APK dosyasını derleyip indirin"
+              title="Android TV & Mobil APK Dosyasını İndir"
             >
-              <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
-              <span>Sistem & APK Güncelle</span>
-              {appVersion !== 'v2.5.0' && (
-                <span className="bg-indigo-500 text-white font-bold text-[8px] px-1.5 py-0.25 rounded">YENİ</span>
-              )}
-            </button>
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>APK İndir (v2.5.0)</span>
+            </a>
 
             {appVersion === 'v2.5.0' && (
               <button
@@ -500,23 +365,6 @@ export default function App() {
           </div>
         </div>
       </footer>
-
-      {/* Software Update and APK Builder Modal */}
-      <SoftwareUpdateModal 
-        isOpen={isUpdateModalOpen}
-        onClose={() => setIsUpdateModalOpen(false)}
-        currentVersion={appVersion}
-        onUpdateSuccess={(newVersion) => {
-          setAppVersion(newVersion);
-          localStorage.setItem('streamlink_app_version', newVersion);
-          showNotification(`Yazılım başarıyla ${newVersion} sürümüne güncellendi!`, 'success');
-        }}
-        onRestart={() => {
-          setIsUpdateModalOpen(false);
-          setIsRestarting(true);
-          setRestartTimeLeft(3);
-        }}
-      />
 
       {/* Link List Update Modal */}
       <LinkListUpdateModal
