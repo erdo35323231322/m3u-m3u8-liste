@@ -63,6 +63,17 @@ export default function M3uListPreview({
   // Group and Sort state
   const [autoGroupAndSort, setAutoGroupAndSort] = useState(false);
 
+  // Link Autodetect, test and update states
+  const [isUpdatingLinks, setIsUpdatingLinks] = useState(false);
+  const [linkUpdateProgress, setLinkUpdateProgress] = useState<{
+    total: number;
+    processed: number;
+    updated: number;
+    verified: number;
+    failed: number;
+    currentChannel: string;
+  } | null>(null);
+
   // Helper to group items by their group and sort alphabetically within
   const getGroupedAndSortedList = (list: PlaylistItem[]): PlaylistItem[] => {
     // 1. Get all unique groups in current list
@@ -569,6 +580,56 @@ export default function M3uListPreview({
     }
   };
 
+  // Link Autodetect, Test, and Refresh Service (Gemini + Public Repositories + Live stream validation)
+  const handleUpdateStreamLinks = async () => {
+    if (items.length === 0) {
+      alert('Link güncellemesi yapmak için listenizde en az bir kanal bulunmalıdır.');
+      return;
+    }
+
+    setIsUpdatingLinks(true);
+    setLinkUpdateProgress({
+      total: items.length,
+      processed: 0,
+      updated: 0,
+      verified: 0,
+      failed: 0,
+      currentChannel: 'Sistem hazırlanıyor...'
+    });
+
+    try {
+      const response = await fetch('/api/update-stream-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playlistItems: items })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Yayın linkleri güncellenemedi.');
+      }
+
+      if (data.updatedItems && Array.isArray(data.updatedItems)) {
+        onUpdateItems(data.updatedItems);
+        setLinkUpdateProgress({
+          total: data.stats.total,
+          processed: data.stats.processed,
+          updated: data.stats.updated,
+          verified: data.stats.verified,
+          failed: data.stats.failed,
+          currentChannel: 'Güncelleme tamamlandı!'
+        });
+        
+        alert(`Yayın Linkleri Başarıyla Güncellendi!\n\n- Toplam Kanal: ${data.stats.total}\n- Taranan: ${data.stats.processed}\n- Başarıyla Güncellenen: ${data.stats.updated} yeni link\n- Çalışır Durumda Doğrulanan: ${data.stats.verified}\n- Çevrimdışı/Hatalı: ${data.stats.failed}`);
+      }
+    } catch (err: any) {
+      alert(`Link güncelleme hatası: ${err.message}`);
+    } finally {
+      setIsUpdatingLinks(false);
+      setLinkUpdateProgress(null);
+    }
+  };
+
   // Same-device IPTV loading functions
   const playlistUrl = playlistId 
     ? `${window.location.origin}/api/playlist/${playlistId}.${m3uType}` 
@@ -896,6 +957,17 @@ export default function M3uListPreview({
             >
               {isLogoSearching ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Image className="w-3.5 h-3.5" />}
               <span>Logo Bul & Eşle</span>
+            </button>
+
+            {/* Linkleri Güncelle (M3U8 Search and test) */}
+            <button
+              onClick={handleUpdateStreamLinks}
+              disabled={isUpdatingLinks || items.length === 0}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold rounded flex items-center space-x-1.5 transition cursor-pointer shadow-lg"
+              title="Kanalların en güncel canlı yayın linklerini (m3u8) internetten ve yapay zekadan arar, test eder ve günceller"
+            >
+              {isUpdatingLinks ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              <span>Linkleri Güncelle</span>
             </button>
 
             {/* Clear All Channels Button */}
@@ -1575,6 +1647,62 @@ export default function M3uListPreview({
                 <GitMerge className="w-4 h-4" />
                 <span>Birleştirmeyi Başlat</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LINK UPDATE REAL-TIME PROGRESS OVERLAY MODAL */}
+      {isUpdatingLinks && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-6 animate-scale-up">
+            <div className="flex items-center space-x-3.5 border-b border-slate-850 pb-4">
+              <div className="bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 text-emerald-400">
+                <RefreshCw className="w-5 h-5 animate-spin" />
+              </div>
+              <div className="space-y-0.5">
+                <h3 className="text-white font-bold text-sm">Canlı Yayın Linkleri Güncelleniyor</h3>
+                <p className="text-[11px] text-slate-500">M3U/M3U8 yayınları taranıyor ve test ediliyor...</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {/* Progress values */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="bg-slate-950/40 border border-slate-850/60 rounded-xl p-3 text-center space-y-1">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Güncellenen</span>
+                  <span className="text-lg font-mono font-bold text-emerald-400">{linkUpdateProgress?.updated || 0}</span>
+                </div>
+                <div className="bg-slate-950/40 border border-slate-850/60 rounded-xl p-3 text-center space-y-1">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Doğrulanan</span>
+                  <span className="text-lg font-mono font-bold text-blue-400">{linkUpdateProgress?.verified || 0}</span>
+                </div>
+              </div>
+
+              {/* Status information */}
+              <div className="bg-slate-950 border border-slate-850 rounded-xl p-3.5 space-y-2 text-xs">
+                <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold font-mono">
+                  <span>İşlenen Kanallar</span>
+                  <span>%{Math.min(100, Math.round(((linkUpdateProgress?.processed || 0) / (linkUpdateProgress?.total || 1)) * 100))} ({linkUpdateProgress?.processed || 0} / {linkUpdateProgress?.total || 0})</span>
+                </div>
+                
+                {/* Progress bar */}
+                <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-850">
+                  <div 
+                    className="bg-emerald-500 h-full transition-all duration-300 rounded-full"
+                    style={{ width: `${Math.min(100, Math.round(((linkUpdateProgress?.processed || 0) / (linkUpdateProgress?.total || 1)) * 100))}%` }}
+                  />
+                </div>
+
+                <div className="flex items-center space-x-1.5 text-[10px] text-slate-400 mt-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
+                  <span className="truncate max-w-[280px]">Mevcut: <span className="text-slate-300 font-bold">{linkUpdateProgress?.currentChannel || 'Aranıyor...'}</span></span>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-slate-400 leading-relaxed text-center">
+                İnternet tarayıcıları, Github IPTV depoları ve Gemini AI ile en güncel, kesintisiz çalışan yayın linkleri taranmaktadır. Lütfen bu pencereyi kapatmayın.
+              </p>
             </div>
           </div>
         </div>

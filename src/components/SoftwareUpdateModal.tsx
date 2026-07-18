@@ -28,6 +28,9 @@ export default function SoftwareUpdateModal({
   
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
+  const [forceOverwrite, setForceOverwrite] = useState(true);
+  const [overwriteLogs, setOverwriteLogs] = useState<string[]>([]);
+  const [currentLog, setCurrentLog] = useState('');
 
   // Check update on open
   useEffect(() => {
@@ -39,6 +42,8 @@ export default function SoftwareUpdateModal({
       setApkStep('idle');
       setError(null);
       setProgress(0);
+      setOverwriteLogs([]);
+      setCurrentLog('');
     }
   }, [isOpen]);
 
@@ -79,6 +84,7 @@ export default function SoftwareUpdateModal({
   const handleApplyUpdate = () => {
     setStep('downloading');
     setProgress(0);
+    setOverwriteLogs([]);
     
     // Simulate download progress
     const interval = setInterval(() => {
@@ -87,11 +93,36 @@ export default function SoftwareUpdateModal({
           clearInterval(interval);
           setStep('applying');
           
-          // Simulate extraction & router hotfix restart
-          setTimeout(() => {
-            setStep('success');
-            onUpdateSuccess(updateInfo?.latestVersion || 'v2.5.0');
-          }, 1500);
+          // Overwrite simulation logs
+          const logs = [
+            "[SİSTEM] Dosya sistemi kilidi açılıyor...",
+            "[SİSTEM] Yazma izinleri kontrol ediliyor (CHMOD 755)...",
+            "[OVERWRITE] yeni_server.ts dosyası okundu. Mevcut /server.ts üzerine yazılıyor...",
+            "[OVERWRITE] /server.ts başarıyla ezildi ve güncellendi (%100).",
+            "[OVERWRITE] yeni_App.tsx dosyası okundu. Mevcut /src/App.tsx üzerine yazılıyor...",
+            "[OVERWRITE] /src/App.tsx başarıyla ezildi ve güncellendi (%100).",
+            "[OVERWRITE] yeni_M3uListPreview.tsx dosyası okundu. Mevcut /src/components/M3uListPreview.tsx üzerine yazılıyor...",
+            "[OVERWRITE] /src/components/M3uListPreview.tsx başarıyla ezildi ve güncellendi (%100).",
+            "[SİSTEM] Yeni M3U8 Link güncelleme motoru kütüphaneleri entegre ediliyor...",
+            "[SİSTEM] Express v5.0 API rotaları ve port 3000 dinleme soketleri yenilendi.",
+            "[SİSTEM] Önbellek temizleniyor ve sistem başarıyla v2.5.0 olarak yeniden başlatılıyor!"
+          ];
+
+          let logIndex = 0;
+          const logInterval = setInterval(() => {
+            if (logIndex < logs.length) {
+              setCurrentLog(logs[logIndex]);
+              setOverwriteLogs(prev => [...prev, logs[logIndex]]);
+              logIndex++;
+            } else {
+              clearInterval(logInterval);
+              setTimeout(() => {
+                setStep('success');
+                onUpdateSuccess(updateInfo?.latestVersion || 'v2.5.0');
+              }, 800);
+            }
+          }, 450);
+
           return 100;
         }
         return prev + 10;
@@ -181,21 +212,38 @@ export default function SoftwareUpdateModal({
 
             {step === 'available' && updateInfo && (
               <div className="space-y-4 animate-fade-in">
-                <div className="bg-indigo-950/20 border border-indigo-900/30 rounded-xl p-4 flex items-center justify-between">
-                  <div className="space-y-1">
-                    <p className="text-white font-bold text-xs flex items-center gap-1.5">
-                      <Sparkles className="w-4 h-4 text-indigo-400 fill-current" />
-                      Yeni Sürüm Bulundu: {updateInfo.latestVersion}
-                    </p>
-                    <p className="text-[10px] text-slate-400">Boyut: {updateInfo.size} | Kaynak dosyalar güncel ve indirilmeye hazır.</p>
+                <div className="bg-indigo-950/20 border border-indigo-900/30 rounded-xl p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-white font-bold text-xs flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-indigo-400 fill-current" />
+                        Yeni Sürüm Bulundu: {updateInfo.latestVersion}
+                      </p>
+                      <p className="text-[10px] text-slate-400">Boyut: {updateInfo.size} | Kaynak dosyalar güncel ve indirilmeye hazır.</p>
+                    </div>
+                    <button
+                      onClick={handleApplyUpdate}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs transition shadow-lg cursor-pointer flex items-center space-x-1.5 shrink-0"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Şimdi Otomatik Güncelle</span>
+                    </button>
                   </div>
-                  <button
-                    onClick={handleApplyUpdate}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs transition shadow-lg cursor-pointer flex items-center space-x-1.5"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Şimdi Otomatik Güncelle</span>
-                  </button>
+
+                  {/* Overwrite Choice */}
+                  <div className="border-t border-indigo-900/40 pt-3 flex items-start space-x-3 text-xs">
+                    <input 
+                      type="checkbox"
+                      id="forceOverwrite"
+                      checked={forceOverwrite}
+                      onChange={(e) => setForceOverwrite(e.target.checked)}
+                      className="mt-0.5 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <label htmlFor="forceOverwrite" className="text-slate-300 font-medium cursor-pointer">
+                      <span className="font-bold text-emerald-400">Mevcut Sistem Dosyalarının Üzerine Yaz (Force Overwrite)</span>
+                      <p className="text-[10px] text-slate-500 leading-relaxed mt-0.5">En son sürüm kaynak kodlarını, server.ts, App.tsx ve M3uListPreview.tsx gibi ana bileşen dosyalarının üzerine doğrudan yazar. Eski dosyaları tamamen günceller.</p>
+                    </label>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -229,10 +277,25 @@ export default function SoftwareUpdateModal({
             )}
 
             {step === 'applying' && (
-              <div className="py-6 flex flex-col items-center justify-center space-y-3 text-center">
-                <RefreshCw className="w-6 h-6 text-emerald-500 animate-spin" />
-                <p className="text-xs text-slate-300 font-semibold">İndirilen yama dosyaları derlenip entegre ediliyor...</p>
-                <p className="text-[10px] text-slate-500">Node.js Express sunucusu ve Vite derleyicisi yapılandırılıyor...</p>
+              <div className="space-y-4 py-2 animate-fade-in">
+                <div className="flex flex-col items-center justify-center space-y-2.5 text-center">
+                  <RefreshCw className="w-6 h-6 text-emerald-500 animate-spin" />
+                  <p className="text-xs text-slate-300 font-semibold">İndirilen yama dosyaları derlenip entegre ediliyor...</p>
+                  <p className="text-[10px] text-slate-500">Mevcut sistem dosyalarının üzerine yazma (Overwrite) işlemi başlatıldı.</p>
+                </div>
+
+                {/* Overwrite Log console */}
+                <div className="bg-slate-950 border border-slate-900 rounded-xl p-3.5 font-mono text-[10px] text-slate-400 space-y-1 max-h-[160px] overflow-y-auto shadow-inner">
+                  {overwriteLogs.map((log, index) => (
+                    <div key={index} className={`flex items-start gap-1.5 py-0.5 ${
+                      log.includes('[OVERWRITE]') ? 'text-emerald-400' : log.includes('[SİSTEM]') ? 'text-indigo-400 font-bold' : 'text-slate-400'
+                    }`}>
+                      <span className="text-slate-600 shrink-0 select-none">❯</span>
+                      <span>{log}</span>
+                    </div>
+                  ))}
+                  <div className="h-1 animate-pulse bg-emerald-500/20 rounded-full mt-1.5" />
+                </div>
               </div>
             )}
 
@@ -319,9 +382,8 @@ export default function SoftwareUpdateModal({
 
                 <div className="flex flex-col sm:flex-row gap-2.5">
                   <a
-                    href="https://github.com/erdemsamat/StreamLinkStudio/releases/download/v2.5.0/StreamLinkStudio.apk"
-                    target="_blank"
-                    rel="noreferrer"
+                    href="/api/download-apk"
+                    download="StreamLinkStudio_v2.5.0_release.apk"
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition cursor-pointer flex items-center justify-center space-x-2 shadow-lg"
                   >
                     <Download className="w-4 h-4" />

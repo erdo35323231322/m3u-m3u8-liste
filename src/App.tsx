@@ -3,6 +3,7 @@ import { PlaylistItem, Playlist } from './types';
 import IptvPlayer from './components/IptvPlayer';
 import BrowserInspector from './components/BrowserInspector';
 import SoftwareUpdateModal from './components/SoftwareUpdateModal';
+import LinkListUpdateModal from './components/LinkListUpdateModal';
 import M3uListPreview from './components/M3uListPreview';
 import { Tv, Radio, HelpCircle, Check, Sparkles, Shield, Compass, Heart, Smartphone, RefreshCw } from 'lucide-react';
 import { findLogoForChannel } from './lib/logoDatabase';
@@ -83,6 +84,7 @@ export default function App() {
   });
 
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [isLinkUpdateModalOpen, setIsLinkUpdateModalOpen] = useState(false);
   const [appVersion, setAppVersion] = useState(() => {
     return localStorage.getItem('streamlink_app_version') || 'v2.4.0';
   });
@@ -145,6 +147,31 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-200 flex flex-col font-sans selection:bg-blue-600/30 selection:text-blue-400">
       
+      {/* All Versions & Devices Update Notification Broadcast Banner */}
+      {appVersion === 'v2.4.0' && (
+        <div className="bg-gradient-to-r from-amber-600 via-rose-600 to-indigo-600 text-white px-4 py-2.5 text-center text-xs font-semibold relative flex flex-col sm:flex-row items-center justify-center gap-2 border-b border-rose-500/20 shadow-[0_4px_20px_rgba(225,29,72,0.2)] animate-pulse">
+          <div className="flex items-center space-x-2">
+            <span className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+            </span>
+            <span className="font-bold tracking-wide">YAYIN GENELİ ACİL SİSTEM GÜNCELLEMESİ (v2.5.0):</span>
+            <span className="text-white/90">Tüm cihazlar ve eski sürümler için yeni sistem güncellemesi yayınlandı!</span>
+          </div>
+          <div className="flex items-center space-x-2 shrink-0">
+            <span className="bg-white/10 text-white text-[10px] px-2 py-0.5 rounded border border-white/15 font-mono">
+              FORCE OVERWRITE DESTEKLİ
+            </span>
+            <button
+              onClick={() => setIsUpdateModalOpen(true)}
+              className="bg-white text-slate-950 px-3 py-1 rounded font-bold text-[11px] hover:bg-slate-100 transition active:scale-95 shadow cursor-pointer shrink-0"
+            >
+              Şimdi Üzerine Yazarak Güncelle
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Dynamic Top Notification */}
       {notification && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 animate-bounce">
@@ -197,6 +224,17 @@ export default function App() {
               )}
             </button>
 
+            {appVersion === 'v2.5.0' && (
+              <button
+                onClick={() => setIsLinkUpdateModalOpen(true)}
+                className="px-3.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/35 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 rounded text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shrink-0 shadow-[0_0_15px_rgba(16,185,129,0.15)] animate-pulse"
+                title="Yayın listesi linklerini otomatik ara, test et ve güncelle"
+              >
+                <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
+                <span>Link Liste Güncelle</span>
+              </button>
+            )}
+
             <div className="bg-slate-900 px-3 py-1.5 rounded border border-slate-800 flex items-center space-x-2 text-xs">
               <div className="w-2 h-2 bg-green-500 rounded-full" />
               <span className="text-slate-400">Cihaz Hazır: Android TV / Mobile</span>
@@ -215,29 +253,54 @@ export default function App() {
       {/* Hero Section Info Card */}
       <section className="bg-gradient-to-b from-slate-950 to-slate-900 border-b border-slate-850 py-6">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="bg-slate-950/40 rounded-xl border border-slate-800 p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center space-x-2 text-blue-400 font-bold text-[10px] uppercase tracking-widest">
-                <Sparkles className="w-3.5 h-3.5 fill-current" />
-                <span>Nasıl Çalışır?</span>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed max-w-3xl">
-                Bu uygulama, Android cihazlar için özel M3U/M3U8 çalma listeleri oluşturmanuzu sağlar. Eklenen her yeni yayın otomatik olarak <span className="text-blue-400 font-mono font-bold">1, 2, 3</span> şeklinde sıralanarak yeni satıra yazılır. Listeyi Android TV'nize aktardığınızda kanallarınız tam belirttiğiniz düzende açılır.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-4 w-full md:w-auto shrink-0 border-t border-slate-900 md:border-0 pt-3 md:pt-0">
-              <div className="bg-slate-900 border border-slate-800 p-3 rounded text-center">
-                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Ekli Kanallar</p>
-                <p className="text-lg font-bold text-blue-400 mt-1 font-mono">{items.length}</p>
-              </div>
-              <div className="bg-slate-900 border border-slate-800 p-3 rounded text-center">
-                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Oynatıcı</p>
-                <p className="text-xs font-bold text-indigo-400 mt-2 flex items-center justify-center gap-1">
-                  <Shield className="w-3.5 h-3.5" />
-                  <span>CORS Aktif</span>
+          <div className="flex flex-col gap-4">
+            
+            <div className="bg-slate-950/40 rounded-xl border border-slate-800 p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2 text-blue-400 font-bold text-[10px] uppercase tracking-widest">
+                  <Sparkles className="w-3.5 h-3.5 fill-current" />
+                  <span>Nasıl Çalışır?</span>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed max-w-3xl">
+                  Bu uygulama, Android cihazlar için özel M3U/M3U8 çalma listeleri oluşturmanuzu sağlar. Eklenen her yeni yayın otomatik olarak <span className="text-blue-400 font-mono font-bold">1, 2, 3</span> şeklinde sıralanarak yeni satıra yazılır. Listeyi Android TV'nize aktardığınızda kanallarınız tam belirttiğiniz düzende açılır.
                 </p>
               </div>
+              <div className="grid grid-cols-2 gap-4 w-full md:w-auto shrink-0 border-t border-slate-900 md:border-0 pt-3 md:pt-0">
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded text-center">
+                  <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Ekli Kanallar</p>
+                  <p className="text-lg font-bold text-blue-400 mt-1 font-mono">{items.length}</p>
+                </div>
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded text-center">
+                  <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Oynatıcı</p>
+                  <p className="text-xs font-bold text-indigo-400 mt-2 flex items-center justify-center gap-1">
+                    <Shield className="w-3.5 h-3.5" />
+                    <span>CORS Aktif</span>
+                  </p>
+                </div>
+              </div>
             </div>
+
+            {appVersion === 'v2.5.0' && (
+              <div className="bg-emerald-950/20 border border-emerald-500/20 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-[0_0_25px_rgba(16,185,129,0.15)]">
+                <div className="flex items-center space-x-3.5">
+                  <div className="w-10 h-10 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 flex items-center justify-center">
+                    <RefreshCw className="w-5 h-5 animate-spin-slow" />
+                  </div>
+                  <div>
+                    <h4 className="text-white font-bold text-sm">Yeni Sürüm Özelliği: Akıllı Link & Liste Güncelleme</h4>
+                    <p className="text-xs text-slate-400">Tüm internet sitelerini, IPTV sayfalarını ve Gemini AI'ı tarayarak kırık veya değişen yayın linklerini otomatik yenileyin!</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsLinkUpdateModalOpen(true)}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition duration-200 cursor-pointer shadow-lg hover:scale-105 flex items-center space-x-2 shrink-0 border border-emerald-500/30"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Link Liste Güncelle</span>
+                </button>
+              </div>
+            )}
+
           </div>
         </div>
       </section>
@@ -313,6 +376,17 @@ export default function App() {
           setAppVersion(newVersion);
           localStorage.setItem('streamlink_app_version', newVersion);
           showNotification(`Yazılım başarıyla ${newVersion} sürümüne güncellendi!`, 'success');
+        }}
+      />
+
+      {/* Link List Update Modal */}
+      <LinkListUpdateModal
+        isOpen={isLinkUpdateModalOpen}
+        onClose={() => setIsLinkUpdateModalOpen(false)}
+        items={items}
+        onUpdateItems={(newItems) => {
+          setPlaylists(prev => prev.map(p => p.id === activePlaylistId ? { ...p, items: newItems } : p));
+          showNotification('Kanal listesi başarıyla güncellendi!', 'success');
         }}
       />
 

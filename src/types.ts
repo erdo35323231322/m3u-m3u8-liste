@@ -6,6 +6,7 @@ export interface PlaylistItem {
   logo?: string;
   group?: string;
   userAgent?: string;
+  status?: 'active' | 'broken' | 'testing';
 }
 
 export interface Playlist {
