@@ -159,6 +159,62 @@ export default function App() {
     showNotification(`"${stream.name}" önizleme oynatıcıya yüklendi.`, 'info');
   };
 
+  const handleAutoUpdateChannelUrl = (originalUrl: string, newUrl: string, newLogo?: string) => {
+    setPlaylists(prev => prev.map(p => {
+      if (p.id === activePlaylistId) {
+        return {
+          ...p,
+          items: p.items.map(item => {
+            if (item.url === originalUrl) {
+              return {
+                ...item,
+                url: newUrl,
+                ...(newLogo ? { logo: newLogo } : {})
+              };
+            }
+            return item;
+          })
+        };
+      }
+      return p;
+    }));
+
+    setActiveStream(prev => {
+      if (prev.url === originalUrl) {
+        return {
+          ...prev,
+          url: newUrl,
+          ...(newLogo ? { logo: newLogo } : {})
+        };
+      }
+      return prev;
+    });
+
+    showNotification(`"${activeStream.name}" için yeni çalışan link bulundu ve listeniz güncellendi!`, 'success');
+  };
+
+  const handleNextChannel = () => {
+    if (!items || items.length === 0) return;
+    const currentIndex = items.findIndex(item => item.url === activeStream.url);
+    if (currentIndex === -1) {
+      handleSelectStream(items[0]);
+    } else {
+      const nextIndex = (currentIndex + 1) % items.length;
+      handleSelectStream(items[nextIndex]);
+    }
+  };
+
+  const handlePrevChannel = () => {
+    if (!items || items.length === 0) return;
+    const currentIndex = items.findIndex(item => item.url === activeStream.url);
+    if (currentIndex === -1) {
+      handleSelectStream(items[items.length - 1]);
+    } else {
+      const prevIndex = (currentIndex - 1 + items.length) % items.length;
+      handleSelectStream(items[prevIndex]);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-200 flex flex-col font-sans selection:bg-blue-600/30 selection:text-blue-400">
       
@@ -322,6 +378,9 @@ export default function App() {
                 isFloating={false}
                 onToggleFloating={() => setIsFloating(true)}
                 onClose={() => setIsPlayerVisible(false)}
+                onAutoUpdateChannelUrl={handleAutoUpdateChannelUrl}
+                onNextChannel={handleNextChannel}
+                onPrevChannel={handlePrevChannel}
               />
             )}
           </div>
@@ -402,6 +461,9 @@ export default function App() {
             isFloating={true}
             onToggleFloating={() => setIsFloating(false)}
             onClose={() => setIsPlayerVisible(false)}
+            onAutoUpdateChannelUrl={handleAutoUpdateChannelUrl}
+            onNextChannel={handleNextChannel}
+            onPrevChannel={handlePrevChannel}
           />
         </motion.div>
       )}

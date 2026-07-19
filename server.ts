@@ -204,30 +204,30 @@ ${sourceText}
 -------------------------
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          description: "Çıkarılan yayın kanalları listesi",
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING, description: "Kanal veya radyo istasyonu adı" },
-              url: { type: Type.STRING, description: "Direkt yayın akış linki (.m3u8, .mp3 vb.)" },
-              type: { type: Type.STRING, description: "Akış türü: 'tv' veya 'radyo'" },
-              logo: { type: Type.STRING, description: "Kanal logo URL'si (varsa, yoksa boş bırak)" },
-              group: { type: Type.STRING, description: "Önerilen grup başlığı (örn. Ulusal, Spor, Sinema, Haber, Müzik vb.)" }
-            },
-            required: ["name", "url", "type"]
-          }
+    const config = {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        description: "Çıkarılan yayın kanalları listesi",
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING, description: "Kanal veya radyo istasyonu adı" },
+            url: { type: Type.STRING, description: "Direkt yayın akış linki (.m3u8, .mp3 vb.)" },
+            type: { type: Type.STRING, description: "Akış türü: 'tv' veya 'radyo'" },
+            logo: { type: Type.STRING, description: "Kanal logo URL'si (varsa, yoksa boş bırak)" },
+            group: { type: Type.STRING, description: "Önerilen grup başlığı (örn. Ulusal, Spor, Sinema, Haber, Müzik vb.)" }
+          },
+          required: ["name", "url", "type"]
         }
       }
+    };
+
+    const response = await generateContentWithFallback(prompt, config, () => {
+      return { text: JSON.stringify(programmaticExtract(sourceText)) };
     });
 
-    const jsonText = response.text?.trim() || "[]";
+    const jsonText = response?.text?.trim() || "[]";
     const channels = JSON.parse(jsonText);
     res.json({ success: true, channels });
   } catch (error: any) {
@@ -263,30 +263,30 @@ ${m3uContent.substring(0, 100000)}
 -------------------------
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              url: { type: Type.STRING },
-              type: { type: Type.STRING }, // 'tv' veya 'radyo'
-              logo: { type: Type.STRING },
-              group: { type: Type.STRING },
-              tvgId: { type: Type.STRING }
-            },
-            required: ["name", "url"]
-          }
+    const config = {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            url: { type: Type.STRING },
+            type: { type: Type.STRING }, // 'tv' veya 'radyo'
+            logo: { type: Type.STRING },
+            group: { type: Type.STRING },
+            tvgId: { type: Type.STRING }
+          },
+          required: ["name", "url"]
         }
       }
+    };
+
+    const response = await generateContentWithFallback(prompt, config, () => {
+      return { text: JSON.stringify(programmaticOptimizeM3u(m3uContent)) };
     });
 
-    const jsonText = response.text?.trim() || "[]";
+    const jsonText = response?.text?.trim() || "[]";
     const channels = JSON.parse(jsonText);
     res.json({ success: true, channels });
   } catch (error: any) {
@@ -317,32 +317,291 @@ ${listStr}
 -------------------------
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              logo: { type: Type.STRING }
-            },
-            required: ["name"]
-          }
+    const config = {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            logo: { type: Type.STRING }
+          },
+          required: ["name"]
         }
       }
+    };
+
+    const response = await generateContentWithFallback(prompt, config, async () => {
+      const programmaticResults = await programmaticSearchLogos(channelNames.slice(0, 50));
+      return { text: JSON.stringify(programmaticResults) };
     });
 
-    const jsonText = response.text?.trim() || "[]";
+    const jsonText = response?.text?.trim() || "[]";
     const logos = JSON.parse(jsonText);
     res.json({ success: true, logos });
   } catch (error: any) {
     res.status(500).json({ error: `Logo arama hatası: ${error.message}` });
   }
 });
+
+interface ProgrammaticChannel {
+  name: string;
+  url: string;
+  logo: string;
+  group: string;
+}
+
+function parseM3uToChannels(m3uContent: string): ProgrammaticChannel[] {
+  const channels: ProgrammaticChannel[] = [];
+  const lines = m3uContent.split('\n');
+  let currentName = '';
+  let currentLogo = '';
+  let currentGroup = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    if (line.startsWith('#EXTINF:')) {
+      const commaIdx = line.lastIndexOf(',');
+      if (commaIdx !== -1) {
+        currentName = line.substring(commaIdx + 1).trim();
+      } else {
+        currentName = 'Bilinmeyen Kanal';
+      }
+
+      currentName = currentName.replace(/^\d+[\.\s-]+\s*/, '');
+
+      const logoMatch = line.match(/tvg-logo="([^"]+)"/);
+      currentLogo = logoMatch ? logoMatch[1] : '';
+
+      const groupMatch = line.match(/group-title="([^"]+)"/);
+      currentGroup = groupMatch ? groupMatch[1] : '';
+    } else if (!line.startsWith('#')) {
+      if (currentName) {
+        channels.push({
+          name: currentName,
+          url: line,
+          logo: currentLogo,
+          group: currentGroup,
+        });
+        currentName = '';
+        currentLogo = '';
+        currentGroup = '';
+      }
+    }
+  }
+  return channels;
+}
+
+let cachedChannels: ProgrammaticChannel[] | null = null;
+let lastFetchTime = 0;
+const CACHE_DURATION = 6 * 60 * 60 * 1000; // 6 hours
+
+async function fetchPublicIptvChannels(): Promise<ProgrammaticChannel[]> {
+  const now = Date.now();
+  if (cachedChannels && (now - lastFetchTime < CACHE_DURATION)) {
+    return cachedChannels;
+  }
+
+  const urls = [
+    "https://iptv-org.github.io/iptv/countries/tr.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/playlists/countries/tr.m3u"
+  ];
+
+  for (const url of urls) {
+    try {
+      console.log(`Fetching public IPTV list from: ${url}`);
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+        }
+      });
+      if (response.ok) {
+        const text = await response.text();
+        const parsed = parseM3uToChannels(text);
+        if (parsed.length > 0) {
+          cachedChannels = parsed;
+          lastFetchTime = now;
+          console.log(`Successfully fetched and parsed ${parsed.length} public channels from ${url}`);
+          return parsed;
+        }
+      }
+    } catch (e: any) {
+      console.error(`Failed to fetch from ${url}:`, e.message);
+    }
+  }
+
+  return cachedChannels || [];
+}
+
+function normalizeName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u')
+    .replace(/ş/g, 's')
+    .replace(/ı/g, 'i')
+    .replace(/ö/g, 'o')
+    .replace(/ç/g, 'c')
+    .replace(/[^a-z0-9]/g, '')
+    .replace(/\b(hd|sd|fhd|uhd|4k|tr|turk|turkiye|turkey)\b/g, '')
+    .trim();
+}
+
+function findBestMatches(targetName: string, channels: ProgrammaticChannel[]): ProgrammaticChannel[] {
+  const normalizedTarget = normalizeName(targetName);
+  if (!normalizedTarget) return [];
+
+  const scored = channels.map(ch => {
+    const normalizedCh = normalizeName(ch.name);
+    let score = 0;
+
+    if (normalizedCh === normalizedTarget) {
+      score = 100;
+    } else if (normalizedCh.includes(normalizedTarget) || normalizedTarget.includes(normalizedCh)) {
+      score = 80 - Math.abs(normalizedCh.length - normalizedTarget.length);
+    }
+
+    return { channel: ch, score };
+  });
+
+  return scored
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map(item => item.channel);
+}
+
+// Gemini rate limit / quota exceeded tracker and resilient fallback engine
+let geminiRateLimitedUntil = 0;
+
+async function generateContentWithFallback(
+  prompt: string,
+  config: any,
+  fallbackFn: () => Promise<any> | any
+): Promise<any> {
+  const now = Date.now();
+  if (now < geminiRateLimitedUntil) {
+    console.log(`[INFO] Gemini API is currently in a 429 cooling rate limit period. Bypassing and executing programmatic fallback instantly.`);
+    return await fallbackFn();
+  }
+
+  if (!ai) {
+    console.log(`[INFO] Gemini client is not initialized. Executing programmatic fallback.`);
+    return await fallbackFn();
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config,
+    });
+    return response;
+  } catch (error: any) {
+    const errorStr = String(error?.message || error || "");
+    if (errorStr.includes("429") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("quota") || errorStr.includes("Quota")) {
+      console.warn(`[WARNING] Gemini API 429 (Quota Exceeded) detected. Locking Gemini API for 15 minutes to prevent stream disruptions.`);
+      geminiRateLimitedUntil = Date.now() + 15 * 60 * 1000; // 15-minute cool down
+    } else {
+      console.error(`[ERROR] Gemini API Error: ${errorStr}`);
+    }
+    return await fallbackFn();
+  }
+}
+
+function programmaticExtract(text: string): any[] {
+  const channels: any[] = [];
+  const m3u8Regex = /(https?:\/\/[^\s"'<>\(\)]+\.(?:m3u8|mp3|aac|mp4|ts))/gi;
+  let matches: RegExpExecArray | null;
+  const foundUrls = new Set<string>();
+
+  while ((matches = m3u8Regex.exec(text)) !== null) {
+    foundUrls.add(matches[0]);
+  }
+
+  let index = 1;
+  for (const url of foundUrls) {
+    let name = "Yayın Kanalı " + index++;
+    try {
+      const urlObj = new URL(url);
+      const pathname = urlObj.pathname;
+      const lastPart = pathname.substring(pathname.lastIndexOf('/') + 1);
+      if (lastPart && lastPart.includes('.')) {
+        name = lastPart.split('.')[0];
+      } else if (urlObj.hostname) {
+        name = urlObj.hostname;
+      }
+    } catch(e) {}
+
+    channels.push({
+      name: name,
+      url: url,
+      type: url.includes(".mp3") || url.includes(".aac") ? "radyo" : "tv",
+      logo: "",
+      group: url.includes(".mp3") || url.includes(".aac") ? "Radyo" : "Genel"
+    });
+  }
+
+  return channels;
+}
+
+function programmaticOptimizeM3u(m3uContent: string): any[] {
+  const channels = parseM3uToChannels(m3uContent);
+  return channels.map(ch => {
+    let cleanName = ch.name.trim();
+    let group = ch.group || "Genel";
+    const nameLower = cleanName.toLowerCase();
+    
+    if (nameLower.includes("spor") || nameLower.includes("sport") || nameLower.includes("bein") || nameLower.includes("ssport")) {
+      group = "TR: Spor";
+    } else if (nameLower.includes("haber") || nameLower.includes("news") || nameLower.includes("cnn") || nameLower.includes("ntv") || nameLower.includes("trthaber")) {
+      group = "TR: Haber";
+    } else if (nameLower.includes("sinema") || nameLower.includes("film") || nameLower.includes("movie") || nameLower.includes("action") || nameLower.includes("vizyon")) {
+      group = "TR: Sinema";
+    } else if (nameLower.includes("belgesel") || nameLower.includes("docu") || nameLower.includes("nature") || nameLower.includes("wild") || nameLower.includes("history")) {
+      group = "TR: Belgesel";
+    } else if (nameLower.includes("radyo") || nameLower.includes("fm") || nameLower.includes("radio")) {
+      group = "TR: Radyo";
+    } else if (nameLower.includes("trt") || nameLower.includes("atv") || nameLower.includes("kanal") || nameLower.includes("star") || nameLower.includes("show") || nameLower.includes("tv8")) {
+      group = "TR: Ulusal";
+    }
+    
+    return {
+      name: cleanName,
+      url: ch.url,
+      type: (group === "TR: Radyo" || nameLower.includes("radyo") || nameLower.includes("fm")) ? "radyo" : "tv",
+      logo: ch.logo || "",
+      group: group,
+      tvgId: ""
+    };
+  });
+}
+
+async function programmaticSearchLogos(channelNames: string[]): Promise<any[]> {
+  try {
+    const publicChannels = await fetchPublicIptvChannels();
+    const results: any[] = [];
+    for (const name of channelNames) {
+      const matches = findBestMatches(name, publicChannels);
+      if (matches.length > 0 && matches[0].logo) {
+        results.push({
+          name: name,
+          logo: matches[0].logo
+        });
+      } else {
+        results.push({
+          name: name,
+          logo: ""
+        });
+      }
+    }
+    return results;
+  } catch (e) {
+    return channelNames.map(name => ({ name, logo: "" }));
+  }
+}
 
 // 4.1.5. AI-Powered Single Channel Stream & Logo Update
 app.post("/api/update-single-channel", async (req, res) => {
@@ -406,27 +665,27 @@ Talimatlar:
 2. Ayrıca, kanala ait resmi, yüksek kaliteli, CORS engeline takılmayan güncel logo URL'sini (Wikipedia, Wikimedia Commons vb.) bul.
 3. Sonuçları JSON formatında döndür.`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              candidates: {
-                type: Type.ARRAY,
-                description: "En az 4 adet canlı yayın akış (.m3u8 veya radyo ses akışı) URL adayı (öncelikli çalışan sırayla)",
-                items: { type: Type.STRING }
-              },
-              logo: { type: Type.STRING, description: "Kanal logosu URL'si" }
+      const config = {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            candidates: {
+              type: Type.ARRAY,
+              description: "En az 4 adet canlı yayın akış (.m3u8 veya radyo ses akışı) URL adayı (öncelikli çalışan sırayla)",
+              items: { type: Type.STRING }
             },
-            required: ["candidates"]
-          }
+            logo: { type: Type.STRING, description: "Kanal logosu URL'si" }
+          },
+          required: ["candidates"]
         }
+      };
+
+      const response = await generateContentWithFallback(prompt, config, () => {
+        return { text: JSON.stringify({ candidates: [], logo: "" }) };
       });
 
-      const data = JSON.parse(response.text?.trim() || "{}");
+      const data = JSON.parse(response?.text?.trim() || "{}");
       if (data.logo && (!finalLogo || finalLogo.trim() === "")) {
         finalLogo = data.logo.trim();
         updated = true;
@@ -451,25 +710,61 @@ Talimatlar:
     }
   }
 
+  // Fallback to programmatic public IPTV list search if still not working or if AI search failed/errored/quota exceeded
+  if (!isCurrentWorking) {
+    try {
+      console.log(`Applying programmatic public IPTV search fallback for: ${name}`);
+      const publicChannels = await fetchPublicIptvChannels();
+      const bestMatches = findBestMatches(name, publicChannels);
+      
+      if (bestMatches.length > 0) {
+        console.log(`Found ${bestMatches.length} programmatic candidates for ${name}`);
+        // Test first 5 closest candidates to maintain responsiveness
+        for (const candidate of bestMatches.slice(0, 5)) {
+          const cleanUrl = (candidate.url || "").trim();
+          if (cleanUrl && cleanUrl.startsWith("http")) {
+            const isCandidateWorking = await checkStreamActive(cleanUrl);
+            if (isCandidateWorking) {
+              finalUrl = cleanUrl;
+              isCurrentWorking = true;
+              updated = true;
+              if (candidate.logo && (!finalLogo || finalLogo.trim() === "")) {
+                finalLogo = candidate.logo.trim();
+              }
+              console.log(`Programmatic fallback successfully found active stream for ${name}: ${cleanUrl}`);
+              break;
+            }
+          }
+        }
+      } else {
+        console.log(`No matches found in public IPTV lists for ${name}`);
+      }
+    } catch (fallbackErr: any) {
+      console.error(`Programmatic fallback search failed for ${name}:`, fallbackErr.message);
+    }
+  }
+
   // Find logo if missing and we still don't have one
   if ((!finalLogo || finalLogo.trim() === "") && ai) {
     try {
       const logoPrompt = `"${name}" kanalı için yüksek kaliteli, gerçek, CORS uyumlu ve herkese açık (Wikimedia, Wikipedia vb.) bir logo resmi bul. JSON formatında 'logo' parametresi olarak geri dön. Bulamadıysan boş bırak.`;
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: logoPrompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              logo: { type: Type.STRING }
-            },
-            required: ["logo"]
-          }
+      const config = {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            logo: { type: Type.STRING }
+          },
+          required: ["logo"]
         }
+      };
+
+      const response = await generateContentWithFallback(logoPrompt, config, async () => {
+        const logoResults = await programmaticSearchLogos([name]);
+        return { text: JSON.stringify({ logo: logoResults[0]?.logo || "" }) };
       });
-      const data = JSON.parse(response.text?.trim() || "{}");
+
+      const data = JSON.parse(response?.text?.trim() || "{}");
       if (data.logo && data.logo.trim().startsWith("http")) {
         finalLogo = data.logo.trim();
         updated = true;
