@@ -4,6 +4,7 @@ import IptvPlayer from './components/IptvPlayer';
 import BrowserInspector from './components/BrowserInspector';
 import LinkListUpdateModal from './components/LinkListUpdateModal';
 import M3uListPreview from './components/M3uListPreview';
+import ApkGuideModal from './components/ApkGuideModal';
 import { Tv, Radio, HelpCircle, Check, Sparkles, Shield, Compass, Heart, Smartphone, RefreshCw } from 'lucide-react';
 import { findLogoForChannel } from './lib/logoDatabase';
 
@@ -83,6 +84,7 @@ export default function App() {
   });
 
   const [isLinkUpdateModalOpen, setIsLinkUpdateModalOpen] = useState(false);
+  const [isApkModalOpen, setIsApkModalOpen] = useState(false);
   const [appVersion, setAppVersion] = useState(() => {
     return localStorage.getItem('streamlink_app_version') || 'v2.5.0';
   });
@@ -211,14 +213,14 @@ export default function App() {
 
           {/* Quick Platform Stats */}
           <div className="flex items-center space-x-3 flex-wrap justify-center sm:justify-end gap-y-2">
-            <a
-              href="/api/download-apk"
+            <button
+              onClick={() => setIsApkModalOpen(true)}
               className="px-3.5 py-1.5 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 hover:text-indigo-300 border border-indigo-500/20 rounded text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shrink-0"
-              title="Android TV & Mobil APK Dosyasını İndir"
+              title="Android TV & Mobil APK Kurulum Kılavuzunu Görüntüle"
             >
               <Smartphone className="w-3.5 h-3.5" />
-              <span>APK İndir (v2.5.0)</span>
-            </a>
+              <span>APK & TV Kurulumu</span>
+            </button>
 
             {appVersion === 'v2.5.0' && (
               <button
@@ -375,6 +377,12 @@ export default function App() {
           setPlaylists(prev => prev.map(p => p.id === activePlaylistId ? { ...p, items: newItems } : p));
           showNotification('Kanal listesi başarıyla güncellendi!', 'success');
         }}
+      />
+
+      {/* APK & Android TV Installation Guide Modal */}
+      <ApkGuideModal
+        isOpen={isApkModalOpen}
+        onClose={() => setIsApkModalOpen(false)}
       />
 
     </div>
