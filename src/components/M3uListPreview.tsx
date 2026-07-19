@@ -167,10 +167,23 @@ export default function M3uListPreview({
 
   const m3uContent = generateM3uString();
 
+  const sendToBackup = async (content: string) => {
+    try {
+      fetch('/api/backup-m3u', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ m3uContent: content }),
+      });
+    } catch (e) {
+      console.error('Background backup trigger failed:', e);
+    }
+  };
+
   const handleCopy = () => {
     navigator.clipboard.writeText(m3uContent);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+    sendToBackup(m3uContent);
   };
 
   const handleDownload = () => {
@@ -183,6 +196,7 @@ export default function M3uListPreview({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    sendToBackup(m3uContent);
   };
 
   // Reordering functions
@@ -710,6 +724,7 @@ export default function M3uListPreview({
         throw new Error(data.error || 'Playlist sunucuya kaydedilemedi.');
       }
       setPlaylistId(data.id);
+      sendToBackup(m3uContent);
     } catch (err: any) {
       setSyncError(`Bağlantı oluşturulurken hata oluştu: ${err.message}`);
     } finally {
@@ -722,6 +737,7 @@ export default function M3uListPreview({
     navigator.clipboard.writeText(playlistUrl);
     setCopiedUrl(true);
     setTimeout(() => setCopiedUrl(false), 2000);
+    sendToBackup(m3uContent);
   };
 
   return (

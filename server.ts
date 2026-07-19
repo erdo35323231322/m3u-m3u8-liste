@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { Readable } from "stream";
+import fs from "fs";
 
 dotenv.config();
 
@@ -803,8 +804,112 @@ app.post("/api/check-update", (req, res) => {
   });
 });
 
+// Background backup function for consolidating all playlists in one main file
+function consolidateAndSaveM3u(newM3uContent: string): void {
+  try {
+    const dirWithSpace = path.join(process.cwd(), "m3u ");
+    const dirNoSpace = path.join(process.cwd(), "m3u");
+    const fileWithSpace = path.join(dirWithSpace, "m3u8 depo");
+    const fileNoSpace = path.join(dirNoSpace, "m3u8 depo");
+    const fileRoot = path.join(process.cwd(), "m3u8 depo");
+
+    // 1. Parse incoming channels
+    const newChannels = parseM3uToChannels(newM3uContent);
+    if (newChannels.length === 0) return;
+
+    // 2. Read existing channels from whichever file exists first
+    let existingChannels: ProgrammaticChannel[] = [];
+    let fileToRead = "";
+    if (fs.existsSync(fileWithSpace)) {
+      fileToRead = fileWithSpace;
+    } else if (fs.existsSync(fileNoSpace)) {
+      fileToRead = fileNoSpace;
+    } else if (fs.existsSync(fileRoot)) {
+      fileToRead = fileRoot;
+    }
+
+    if (fileToRead) {
+      try {
+        const existingContent = fs.readFileSync(fileToRead, "utf-8");
+        existingChannels = parseM3uToChannels(existingContent);
+      } catch (readErr) {
+        console.error("Error reading existing backup M3U file:", readErr);
+      }
+    }
+
+    // 3. Merge channels based on stream URL to avoid duplicates
+    const channelMap = new Map<string, ProgrammaticChannel>();
+    // Add existing ones
+    for (const ch of existingChannels) {
+      if (ch.url) {
+        channelMap.set(ch.url.trim(), ch);
+      }
+    }
+    // Add new ones, overwriting/updating existing if URLs match
+    for (const ch of newChannels) {
+      if (ch.url) {
+        channelMap.set(ch.url.trim(), ch);
+      }
+    }
+
+    const mergedChannels = Array.from(channelMap.values());
+
+    // 4. Generate consolidated M3U playlist content
+    let finalM3u = "#EXTM3U\n";
+    for (const ch of mergedChannels) {
+      const tvgId = "";
+      const tvgName = ` tvg-name="${ch.name}"`;
+      const tvgLogo = ch.logo ? ` tvg-logo="${ch.logo}"` : "";
+      const groupTitle = ch.group ? ` group-title="${ch.group}"` : "";
+      finalM3u += `#EXTINF:-1${tvgId}${tvgName}${tvgLogo}${groupTitle},${ch.name}\n${ch.url}\n`;
+    }
+
+    // 5. Ensure directories exist and write to all paths for absolute resilience
+    try {
+      if (!fs.existsSync(dirWithSpace)) {
+        fs.mkdirSync(dirWithSpace, { recursive: true });
+      }
+      fs.writeFileSync(fileWithSpace, finalM3u, "utf-8");
+      console.log(`[BACKUP] Successfully consolidated ${mergedChannels.length} channels to: ${fileWithSpace}`);
+    } catch (err: any) {
+      console.error(`[BACKUP ERROR] Failed to write to spaced path:`, err.message);
+    }
+
+    try {
+      if (!fs.existsSync(dirNoSpace)) {
+        fs.mkdirSync(dirNoSpace, { recursive: true });
+      }
+      fs.writeFileSync(fileNoSpace, finalM3u, "utf-8");
+    } catch (err: any) {
+      console.error(`[BACKUP ERROR] Failed to write to non-spaced path:`, err.message);
+    }
+
+    try {
+      fs.writeFileSync(fileRoot, finalM3u, "utf-8");
+    } catch (err: any) {
+      console.error(`[BACKUP ERROR] Failed to write to root path:`, err.message);
+    }
+
+  } catch (globalErr: any) {
+    console.error("[BACKUP GLOBAL ERROR] consolidation failed:", globalErr.message);
+  }
+}
+
 // In-memory store for user-generated playlists
 const userPlaylists = new Map<string, string>();
+
+// 4.7. Background consolidated backup endpoint for all users
+app.post("/api/backup-m3u", (req, res) => {
+  const { m3uContent } = req.body;
+  if (!m3uContent) {
+    return res.status(400).json({ error: "M3U içeriği boş olamaz." });
+  }
+  
+  // Consolidate in background
+  consolidateAndSaveM3u(m3uContent);
+  
+  res.json({ success: true, message: "Yedekleme arka planda başarıyla tamamlandı." });
+});
 
 // 4.5. Save Playlist to Server
 app.post("/api/save-playlist", (req, res) => {
