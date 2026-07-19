@@ -38,6 +38,7 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isRadio, setIsRadio] = useState(false);
   const hlsRef = useRef<Hls | null>(null);
+  const dashRef = useRef<any>(null);
 
   // Floating Side Player Mode
   const [isFloating, setIsFloating] = useState(false);
@@ -46,7 +47,7 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
   const [isClosed, setIsClosed] = useState(false);
   const [playerScale, setPlayerScale] = useState<'normal' | 'half'>('half'); // defaults to 50% smaller / compact
   const [floatingPosition, setFloatingPosition] = useState<'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'>('bottom-right');
-  const [codecPreset, setCodecPreset] = useState<'vlc' | 'xtream' | 'standard'>('vlc'); // Defaults to VLC for rapid performance
+  const [codecPreset, setCodecPreset] = useState<'vlc' | 'xtream' | 'standard' | 'dash' | 'exoplayer'>('vlc'); // Defaults to VLC for rapid performance
 
   // Advanced Controls & Codec Finder States
   const [activeTab, setActiveTab] = useState<'control' | 'codec' | 'stats'>('control');
@@ -189,7 +190,96 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
       hlsRef.current = null;
     }
 
-    if (currentStream.url.includes('.m3u8')) {
+    // Reset previous DASH instances
+    if (dashRef.current) {
+      try {
+        dashRef.current.destroy();
+      } catch (e) {
+        console.error("Error destroying dash.js instance:", e);
+      }
+      dashRef.current = null;
+    }
+
+    const isDash = currentStream.url.includes('.mpd') || codecPreset === 'dash';
+    const isHlsStream = currentStream.url.includes('.m3u8');
+
+    if (isDash) {
+      const loadAndStartDash = () => {
+        try {
+          const player = (window as any).dashjs.MediaPlayer().create();
+          dashRef.current = player;
+          
+          if (codecPreset === 'vlc') {
+            player.updateSettings({
+              'streaming': {
+                'lowLatencyEnabled': true,
+                'liveDelay': 1.2,
+                'liveCatchUpMinDrift': 0.02,
+                'liveCatchUpMaxDrift': 0.4
+              }
+            });
+          } else if (codecPreset === 'exoplayer') {
+            player.updateSettings({
+              'streaming': {
+                'buffer': {
+                  'stableBufferTime': 15,
+                  'bufferTimeAtTopQuality': 25,
+                }
+              }
+            });
+          } else {
+            player.updateSettings({
+              'streaming': {
+                'buffer': {
+                  'stableBufferTime': 8,
+                }
+              }
+            });
+          }
+
+          player.initialize(video, playUrl, true);
+          
+          player.on('streamInitialized', () => {
+            const bitrates = player.getBitrateInfoListFor('video');
+            if (bitrates && bitrates.length > 0) {
+              const levels = bitrates.map((b: any, index: number) => ({
+                index,
+                name: `${b.height || 'Auto'}p (${Math.round(b.bitrate / 1000)} Kbps)`
+              }));
+              setHlsLevels(levels);
+            }
+          });
+
+          player.on('error', (e: any) => {
+            console.error("Dash.js error:", e);
+            if (!useProxy) {
+              setUseProxy(true);
+              setErrorMsg("MPEG-DASH Güvenli Proxy üzerinden aktifleştiriliyor...");
+            } else {
+              setErrorMsg("MPEG-DASH (.mpd) yayını yüklenemedi. Yayın şifreli, süresi dolmuş veya lisans hatası veriyor olabilir.");
+            }
+          });
+
+          setIsPlaying(true);
+          setErrorMsg(null);
+        } catch (err: any) {
+          setErrorMsg(`DASH oynatma hatası: ${err.message}`);
+        }
+      };
+
+      if (!(window as any).dashjs) {
+        const script = document.createElement('script');
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/dashjs/4.7.1/dash.all.min.js";
+        script.async = true;
+        script.onload = loadAndStartDash;
+        script.onerror = () => {
+          setErrorMsg("MPEG-DASH çözücü kütüphanesi yüklenemedi.");
+        };
+        document.head.appendChild(script);
+      } else {
+        loadAndStartDash();
+      }
+    } else if (isHlsStream) {
       if (Hls.isSupported()) {
         const hlsConfig: any = {
           enableWorker: true,
@@ -212,6 +302,19 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
           hlsConfig.maxMaxBufferLength = 15;
           hlsConfig.liveSyncDuration = 2.0;
           hlsConfig.maxBufferSize = 12 * 1024 * 1024; // 12MB buffer
+        } else if (codecPreset === 'exoplayer') {
+          // ExoPlayer Android TV optimal parameters
+          hlsConfig.backBufferLength = 45;
+          hlsConfig.maxBufferLength = 20;
+          hlsConfig.maxMaxBufferLength = 25;
+          hlsConfig.liveSyncDuration = 3.0;
+          hlsConfig.liveMaxLatencyDuration = 8.0;
+          hlsConfig.maxBufferSize = 16 * 1024 * 1024; // 16MB buffer like Android ExoPlayer
+          hlsConfig.maxStarvationDelay = 4;
+          hlsConfig.maxLoadingDelay = 4;
+          hlsConfig.fragLoadingTimeOut = 15000;
+          hlsConfig.manifestLoadingTimeOut = 15000;
+          hlsConfig.levelLoadingTimeOut = 15000;
         } else {
           // Standard HTML5
           hlsConfig.backBufferLength = 60;
@@ -285,7 +388,7 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
         setErrorMsg("Tarayıcınız HLS (.m3u8) yayınlarını desteklemiyor.");
       }
     } else {
-      // Normal video (mp4, webm)
+      // Normal video (mp4, webm, ts etc.)
       video.src = playUrl;
       video.load();
       video.play()
@@ -314,6 +417,14 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
+      }
+      if (dashRef.current) {
+        try {
+          dashRef.current.destroy();
+        } catch (e) {
+          console.error("Error destroying dash.js instance in effect cleanup:", e);
+        }
+        dashRef.current = null;
       }
     };
   }, [currentStream.url, useProxy, isRadio, codecPreset]);
@@ -986,55 +1097,86 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
                   <Zap className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
                   Yayın Çözücü Motoru (Codec)
                 </span>
-                <span className="text-[10px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded">
-                  {codecPreset === 'vlc' ? 'VLC Codex Ultra Hızlı' : codecPreset === 'xtream' ? 'Xtream Codex' : 'Standart HTML5'}
+                <span className="text-[10px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono">
+                  {codecPreset === 'vlc' ? 'VLC Ultra Hızlı' : 
+                   codecPreset === 'xtream' ? 'Xtream Codex' : 
+                   codecPreset === 'exoplayer' ? 'Google ExoPlayer' : 
+                   codecPreset === 'dash' ? 'MPEG-DASH Engine' : 'Standart HTML5'}
                 </span>
               </div>
               
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
                 <button
                   onClick={() => setCodecPreset('vlc')}
-                  className={`py-2 rounded-lg font-bold text-[10px] text-center border transition flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                  className={`py-2 px-1 rounded-lg font-bold text-[9px] text-center border transition flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
                     codecPreset === 'vlc' 
                       ? 'bg-blue-600/15 border-blue-500 text-blue-400' 
                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                   }`}
                   title="VLC Web Engine: Düşük arabellek, 1 sn gecikme ve kesintisiz kare hızı ile en hızlı tepki süresi."
                 >
-                  <span className="font-mono tracking-wide text-[11px]">VLC CODEC</span>
-                  <span className="text-[8px] opacity-70">Ultra Tepkisel</span>
+                  <span className="font-mono tracking-wide text-[10px]">VLC CODEC</span>
+                  <span className="text-[7px] opacity-70">Ultra Hızlı</span>
                 </button>
 
                 <button
                   onClick={() => setCodecPreset('xtream')}
-                  className={`py-2 rounded-lg font-bold text-[10px] text-center border transition flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                  className={`py-2 px-1 rounded-lg font-bold text-[9px] text-center border transition flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
                     codecPreset === 'xtream' 
                       ? 'bg-indigo-600/15 border-indigo-500 text-indigo-400' 
                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                   }`}
                   title="Xtream Engine: Segment optimize veri akışı ve yüksek çözünürlüklü yayınlar için akıllı tamponlama."
                 >
-                  <span className="font-mono tracking-wide text-[11px]">XTREAM</span>
-                  <span className="text-[8px] opacity-70">Segment Optimize</span>
+                  <span className="font-mono tracking-wide text-[10px]">XTREAM</span>
+                  <span className="text-[7px] opacity-70">Segment Opt</span>
+                </button>
+
+                <button
+                  onClick={() => setCodecPreset('exoplayer')}
+                  className={`py-2 px-1 rounded-lg font-bold text-[9px] text-center border transition flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                    codecPreset === 'exoplayer' 
+                      ? 'bg-emerald-600/15 border-emerald-500 text-emerald-400' 
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                  title="Google ExoPlayer: Android TV standart yayın motoru eşdeğeri. Yüksek tampon boyutu, parazit önleyici akıllı arabellek."
+                >
+                  <span className="font-mono tracking-wide text-[10px]">EXOPLAYER</span>
+                  <span className="text-[7px] opacity-70">Yüksek Tampon</span>
+                </button>
+
+                <button
+                  onClick={() => setCodecPreset('dash')}
+                  className={`py-2 px-1 rounded-lg font-bold text-[9px] text-center border transition flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                    codecPreset === 'dash' 
+                      ? 'bg-purple-600/15 border-purple-500 text-purple-400' 
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                  title="MPEG-DASH: dash.js motoru ile .mpd uzantılı ve dinamik uyarlanabilir yayınları çözer."
+                >
+                  <span className="font-mono tracking-wide text-[10px]">DASH (MPD)</span>
+                  <span className="text-[7px] opacity-70">Uyumlu Motor</span>
                 </button>
 
                 <button
                   onClick={() => setCodecPreset('standard')}
-                  className={`py-2 rounded-lg font-bold text-[10px] text-center border transition flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                  className={`py-2 px-1 rounded-lg font-bold text-[9px] text-center border transition flex flex-col items-center justify-center gap-0.5 cursor-pointer col-span-2 sm:col-span-1 ${
                     codecPreset === 'standard' 
                       ? 'bg-slate-800 border-slate-600 text-slate-200' 
                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                   }`}
-                  title="Standard HTML5: Varsayılan tarayıcı video motoru."
+                  title="Standard HTML5: Ekstra kütüphane veya hızlandırıcı olmadan düz tarayıcı oynatıcı motoru."
                 >
-                  <span className="font-mono tracking-wide text-[11px]">STANDART</span>
-                  <span className="text-[8px] opacity-70">Sistem Varsayılanı</span>
+                  <span className="font-mono tracking-wide text-[10px]">STANDART</span>
+                  <span className="text-[7px] opacity-70">Varsayılan</span>
                 </button>
               </div>
 
               <p className="text-[9px] text-slate-500 font-sans leading-normal">
                 {codecPreset === 'vlc' && "* VLC Codec Aktif: Yapay zekalı arabellek önleme sayesinde donmalar engellenir, tepki süresi hızlanır."}
                 {codecPreset === 'xtream' && "* Xtream Aktif: TiviMate uyumlu başlıklar ve 12MB segment yükleme arabellek seviyesi ile akıllı akış."}
+                {codecPreset === 'exoplayer' && "* ExoPlayer Aktif: Gelişmiş Android ExoPlayer tampon algoritmaları sayesinde kesintisiz ve akıcı yayın akışı."}
+                {codecPreset === 'dash' && "* MPEG-DASH Aktif: Dash.js uyarlanabilir video akış motoru devrede. .mpd bağlantıları için mükemmel seçim."}
                 {codecPreset === 'standard' && "* Standart Mod: Ekstra hızlandırma ve özel başlık tünellemesi olmadan düz oynatıcı."}
               </p>
             </div>
