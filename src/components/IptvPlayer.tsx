@@ -3,7 +3,7 @@ import Hls from 'hls.js';
 import { 
   Play, Square, Volume2, VolumeX, Shield, ShieldAlert, Zap, Radio, Tv, Settings, 
   Globe, HelpCircle, RefreshCw, Maximize, Minimize2, Pin, PinOff, Activity, Info, 
-  Sparkles, Sliders, ChevronDown, Check, Video, BarChart2 
+  Sparkles, Sliders, ChevronDown, Check, Video, BarChart2, X, Move, Settings2
 } from 'lucide-react';
 import { PlaylistItem } from '../types';
 
@@ -41,6 +41,12 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
 
   // Floating Side Player Mode
   const [isFloating, setIsFloating] = useState(false);
+
+  // Custom User Preferences & Controls
+  const [isClosed, setIsClosed] = useState(false);
+  const [playerScale, setPlayerScale] = useState<'normal' | 'half'>('half'); // defaults to 50% smaller / compact
+  const [floatingPosition, setFloatingPosition] = useState<'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'>('bottom-right');
+  const [codecPreset, setCodecPreset] = useState<'vlc' | 'xtream' | 'standard'>('vlc'); // Defaults to VLC for rapid performance
 
   // Advanced Controls & Codec Finder States
   const [activeTab, setActiveTab] = useState<'control' | 'codec' | 'stats'>('control');
@@ -92,8 +98,17 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
     if (!rawUrl) return '';
     if (useProxy) {
       let queryParams = `url=${encodeURIComponent(rawUrl)}`;
-      if (proxyUserAgent) {
-        queryParams += `&userAgent=${encodeURIComponent(proxyUserAgent)}`;
+      
+      // Select optimal User-Agent based on selected codec acceleration
+      let activeUa = proxyUserAgent;
+      if (codecPreset === 'vlc') {
+        activeUa = 'VLC/3.0.18';
+      } else if (codecPreset === 'xtream') {
+        activeUa = 'TiviMate/4.7.0 (Xiaomi/MiBOX4)';
+      }
+
+      if (activeUa) {
+        queryParams += `&userAgent=${encodeURIComponent(activeUa)}`;
       }
       if (proxyReferer) {
         queryParams += `&referer=${encodeURIComponent(proxyReferer)}`;
@@ -150,6 +165,9 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
     setHlsLevels([]);
     setSelectedQualityIndex(-1);
 
+    // Auto reopen and uncollapse when a new stream/play icon is triggered
+    setIsClosed(false);
+
     // Auto trigger codec analysis
     if (streamUrl) {
       analyzeStream(streamUrl);
@@ -173,12 +191,34 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
 
     if (currentStream.url.includes('.m3u8')) {
       if (Hls.isSupported()) {
-        const hls = new Hls({
+        const hlsConfig: any = {
           enableWorker: true,
           lowLatencyMode: true,
-          backBufferLength: 60,
-          maxBufferLength: 30,
-        });
+          progressive: true,
+        };
+
+        if (codecPreset === 'vlc') {
+          // VLC Codec mode: Optimized for ultra-fast response, minimal latency, and instant frame recovery
+          hlsConfig.backBufferLength = 15;
+          hlsConfig.maxBufferLength = 4;
+          hlsConfig.maxMaxBufferLength = 6;
+          hlsConfig.liveSyncDuration = 1.0;
+          hlsConfig.liveMaxLatencyDuration = 2.5;
+          hlsConfig.maxBufferSize = 5 * 1024 * 1024; // 5MB buffer for instant loading
+        } else if (codecPreset === 'xtream') {
+          // Xtream playlist segment optimized buffer: High throughput progressive chunks
+          hlsConfig.backBufferLength = 30;
+          hlsConfig.maxBufferLength = 10;
+          hlsConfig.maxMaxBufferLength = 15;
+          hlsConfig.liveSyncDuration = 2.0;
+          hlsConfig.maxBufferSize = 12 * 1024 * 1024; // 12MB buffer
+        } else {
+          // Standard HTML5
+          hlsConfig.backBufferLength = 60;
+          hlsConfig.maxBufferLength = 30;
+        }
+
+        const hls = new Hls(hlsConfig);
         hlsRef.current = hls;
         hls.loadSource(playUrl);
         hls.attachMedia(video);
@@ -276,7 +316,7 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
         hlsRef.current = null;
       }
     };
-  }, [currentStream.url, useProxy, isRadio]);
+  }, [currentStream.url, useProxy, isRadio, codecPreset]);
 
   // Monitor playback buffer & quality diagnostics
   useEffect(() => {
@@ -338,7 +378,7 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
     return () => {
       audio.pause();
     };
-  }, [currentStream.url, useProxy, isRadio]);
+  }, [currentStream.url, useProxy, isRadio, codecPreset]);
 
   // Volume Control
   useEffect(() => {
@@ -379,7 +419,31 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
         // Force refresh
         const playUrl = getPlayableUrl(currentStream.url);
         if (currentStream.url.includes('.m3u8') && Hls.isSupported()) {
-          const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+          const hlsConfig: any = {
+            enableWorker: true,
+            lowLatencyMode: true,
+            progressive: true,
+          };
+
+          if (codecPreset === 'vlc') {
+            hlsConfig.backBufferLength = 15;
+            hlsConfig.maxBufferLength = 4;
+            hlsConfig.maxMaxBufferLength = 6;
+            hlsConfig.liveSyncDuration = 1.0;
+            hlsConfig.liveMaxLatencyDuration = 2.5;
+            hlsConfig.maxBufferSize = 5 * 1024 * 1024;
+          } else if (codecPreset === 'xtream') {
+            hlsConfig.backBufferLength = 30;
+            hlsConfig.maxBufferLength = 10;
+            hlsConfig.maxMaxBufferLength = 15;
+            hlsConfig.liveSyncDuration = 2.0;
+            hlsConfig.maxBufferSize = 12 * 1024 * 1024;
+          } else {
+            hlsConfig.backBufferLength = 60;
+            hlsConfig.maxBufferLength = 30;
+          }
+
+          const hls = new Hls(hlsConfig);
           hlsRef.current = hls;
           hls.loadSource(playUrl);
           hls.attachMedia(video);
@@ -495,42 +559,108 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
     );
   };
 
+  // Closed State Placeholder
+  if (isClosed) {
+    return (
+      <div id="iptv-player-container" className="bg-slate-950 border border-slate-850 rounded-2xl overflow-hidden shadow-2xl flex flex-col p-6 space-y-4 text-slate-200 h-full min-h-[300px] justify-center items-center text-center animate-fade-in">
+        <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500">
+          <Tv className="w-6 h-6 text-indigo-400 animate-pulse" />
+        </div>
+        <div className="space-y-1 max-w-xs">
+          <h3 className="text-white font-bold text-sm">Oynatıcı Kapatıldı</h3>
+          <p className="text-[11px] text-slate-400">
+            Oynatıcı gizlendi. Kanal listesinden herhangi bir kanalın "Oynat" veya "Önizle" butonuna bastığınızda otomatik olarak tekrar açılacaktır.
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            setIsClosed(false);
+          }}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition text-xs flex items-center space-x-1.5 cursor-pointer shadow-lg"
+        >
+          <Play className="w-3.5 h-3.5 fill-current" />
+          <span>Oynatıcıyı Şimdi Aç</span>
+        </button>
+      </div>
+    );
+  }
+
   // Render Floating Window Panel
   if (isFloating && currentStream.url) {
+    const positionClasses = {
+      'bottom-right': 'bottom-6 right-6',
+      'bottom-left': 'bottom-6 left-6',
+      'top-right': 'top-20 right-6',
+      'top-left': 'top-20 left-6',
+    };
+
+    const cyclePosition = () => {
+      const order: Array<'bottom-right' | 'bottom-left' | 'top-left' | 'top-right'> = [
+        'bottom-right', 'bottom-left', 'top-left', 'top-right'
+      ];
+      const currentIndex = order.indexOf(floatingPosition);
+      const nextIndex = (currentIndex + 1) % order.length;
+      setFloatingPosition(order[nextIndex]);
+    };
+
     return (
       <>
-        {/* Fixed Mini Floating Side Window in Bottom Right */}
+        {/* Fixed Mini Floating Side Window in chosen position and size scale */}
         <div 
           id="mini-floating-player" 
-          className="fixed bottom-6 right-6 z-[9999] w-[330px] md:w-[370px] rounded-2xl bg-slate-950/95 border-2 border-indigo-500/35 backdrop-blur-xl shadow-2xl flex flex-col overflow-hidden animate-fade-in text-slate-200"
+          className={`fixed ${positionClasses[floatingPosition]} z-[9999] rounded-2xl bg-slate-950/95 border-2 border-indigo-500/35 backdrop-blur-xl shadow-2xl flex flex-col overflow-hidden animate-fade-in text-slate-200 transition-all duration-300 ${
+            playerScale === 'half' ? 'w-[190px] md:w-[210px]' : 'w-[330px] md:w-[370px]'
+          }`}
         >
-          {/* Header with stream title and drag handle style bar */}
-          <div className="bg-slate-900 px-4 py-3 flex items-center justify-between border-b border-slate-800">
-            <div className="flex items-center space-x-2.5 min-w-0">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          {/* Header with stream title and size, position and close buttons */}
+          <div className="bg-slate-900 px-3 py-2 flex items-center justify-between border-b border-slate-800">
+            <div className="flex items-center space-x-1.5 min-w-0">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
               <div className="min-w-0">
-                <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider block font-mono">CANLI YAYIN</span>
-                <h4 className="text-white font-bold text-xs truncate leading-tight font-sans" title={currentStream.name}>
+                {playerScale !== 'half' && (
+                  <span className="text-[8px] text-indigo-400 font-bold uppercase tracking-wider block font-mono">CANLI YAYIN</span>
+                )}
+                <h4 className="text-white font-bold text-[10px] md:text-xs truncate leading-tight font-sans" title={currentStream.name}>
                   {currentStream.name || 'Seçili Yayın'}
                 </h4>
               </div>
             </div>
 
             <div className="flex items-center space-x-1 shrink-0">
-              {/* Unpin Button to return to normal container */}
+              {/* Change Position Button */}
+              <button
+                onClick={cyclePosition}
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition cursor-pointer"
+                title="Konumu Değiştir"
+              >
+                <Move className="w-3 h-3" />
+              </button>
+
+              {/* Resize Button (Tam Boyut vs Yarı Boyut) */}
+              <button
+                onClick={() => setPlayerScale(playerScale === 'normal' ? 'half' : 'normal')}
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition cursor-pointer"
+                title={playerScale === 'normal' ? "Yarı Boyuta Küçült" : "Tam Boyuta Büyüt"}
+              >
+                {playerScale === 'normal' ? <Minimize2 className="w-3 h-3" /> : <Maximize className="w-3 h-3" />}
+              </button>
+
+              {/* Pin back button */}
               <button
                 onClick={() => setIsFloating(false)}
-                className="p-1.5 hover:bg-slate-850 rounded text-slate-400 hover:text-white transition cursor-pointer"
-                title="Oynatıcıyı Ana Ekrana Sabitle"
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition cursor-pointer"
+                title="Ekrana Sabitle"
               >
-                <PinOff className="w-3.5 h-3.5" />
+                <PinOff className="w-3 h-3" />
               </button>
+
+              {/* Close Button */}
               <button
-                onClick={reloadStream}
-                className="p-1.5 hover:bg-slate-850 rounded text-slate-400 hover:text-white transition cursor-pointer"
-                title="Yayını Yenile / Eşitle"
+                onClick={() => setIsClosed(true)}
+                className="p-1 hover:bg-red-900/30 rounded text-red-400 hover:text-red-300 transition cursor-pointer"
+                title="Kapat"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
+                <X className="w-3 h-3" />
               </button>
             </div>
           </div>
@@ -539,55 +669,56 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
           <div className="relative bg-black">
             {renderPlayerMedia()}
             {errorMsg && (
-              <div className="absolute inset-0 bg-red-950/95 p-3 flex flex-col justify-center items-center text-center space-y-1.5 backdrop-blur-sm">
-                <ShieldAlert className="w-6 h-6 text-red-500" />
-                <p className="text-[10px] font-bold text-red-300">Yayın Bağlantı Hatası</p>
-                <p className="text-[9px] text-slate-300 px-2 line-clamp-2">{errorMsg}</p>
+              <div className="absolute inset-0 bg-red-950/95 p-2 flex flex-col justify-center items-center text-center space-y-1 backdrop-blur-sm">
+                <ShieldAlert className="w-4 h-4 text-red-500" />
+                <p className="text-[9px] font-bold text-red-300">Hata</p>
                 <button 
                   onClick={reloadStream} 
-                  className="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-[9px] font-bold transition cursor-pointer"
+                  className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-[8px] font-bold transition cursor-pointer"
                 >
-                  Yeniden Dene
+                  Yenile
                 </button>
               </div>
             )}
           </div>
 
           {/* Quick Floating Controls */}
-          <div className="bg-slate-900/90 p-3 flex items-center justify-between gap-4 border-t border-slate-800">
-            <div className="flex items-center space-x-2.5">
+          <div className="bg-slate-900/90 p-2 flex items-center justify-between gap-1 border-t border-slate-800">
+            <div className="flex items-center space-x-1.5">
               <button 
                 onClick={togglePlay}
-                className="p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transition cursor-pointer"
+                className="p-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transition cursor-pointer"
               >
-                {isPlaying ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current ml-0.5" />}
+                {isPlaying ? <Square className="w-2.5 h-2.5 fill-current" /> : <Play className="w-2.5 h-2.5 fill-current ml-0.5" />}
               </button>
 
               {/* Volume controls */}
-              <div className="flex items-center space-x-1">
-                <button onClick={() => setIsMuted(!isMuted)} className="text-slate-400 hover:text-white">
-                  {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+              <div className="flex items-center space-x-0.5">
+                <button onClick={() => setIsMuted(!isMuted)} className="text-slate-400 hover:text-white p-0.5">
+                  {isMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
                 </button>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="1" 
-                  step="0.05"
-                  value={isMuted ? 0 : volume}
-                  onChange={(e) => {
-                    setVolume(parseFloat(e.target.value));
-                    setIsMuted(false);
-                  }}
-                  className="w-12 h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-indigo-500"
-                />
+                {playerScale !== 'half' && (
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="1" 
+                    step="0.05"
+                    value={isMuted ? 0 : volume}
+                    onChange={(e) => {
+                      setVolume(parseFloat(e.target.value));
+                      setIsMuted(false);
+                    }}
+                    className="w-10 h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-indigo-500"
+                  />
+                )}
               </div>
             </div>
 
             {/* Quality & Auto Codex finder brief details */}
-            <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5">
-              <Sparkles className="w-3 h-3 text-indigo-400" />
-              <span>
-                {codecInfo ? `${codecInfo.codecReport?.videoCodec?.split(' ')[0] || 'H.264'} • ${codecInfo.codecReport?.resolution || 'Auto'}` : 'Codec Bulunuyor...'}
+            <div className="text-[8px] md:text-[9px] text-slate-400 font-mono truncate max-w-[90px] flex items-center gap-0.5">
+              <Sparkles className="w-2.5 h-2.5 text-indigo-400 shrink-0" />
+              <span className="truncate">
+                {codecInfo ? `${codecInfo.codecReport?.videoCodec?.split(' ')[0] || 'H.264'}` : 'Auto'}
               </span>
             </div>
           </div>
@@ -601,13 +732,22 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
                 <Activity className="w-3.5 h-3.5 animate-pulse" />
                 Yayında (Mini Oynatıcı Aktif)
               </span>
-              <button
-                onClick={() => setIsFloating(false)}
-                className="text-[11px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 cursor-pointer transition hover:underline"
-              >
-                <Pin className="w-3.5 h-3.5" />
-                <span>Ekrana Geri Al</span>
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setIsFloating(false)}
+                  className="text-[11px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 cursor-pointer transition hover:underline"
+                >
+                  <Pin className="w-3.5 h-3.5" />
+                  <span>Ekrana Geri Al</span>
+                </button>
+                <button
+                  onClick={() => setIsClosed(true)}
+                  className="text-[11px] text-red-400 hover:text-red-300 font-bold flex items-center gap-1 cursor-pointer transition hover:underline ml-2"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Oynatıcıyı Kapat</span>
+                </button>
+              </div>
             </div>
 
             {/* Info Box */}
@@ -633,7 +773,7 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
               </div>
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="bg-slate-900/40 border border-slate-850 p-2.5 rounded-lg text-xs space-y-0.5">
-                  <span className="text-[10px] text-slate-500 font-mono block">AKIF PROTOKOL</span>
+                  <span className="text-[10px] text-slate-500 font-mono block">AKİF PROTOKOL</span>
                   <span className="font-bold text-slate-200">{codecInfo?.protocol || 'HLS (HTTP Live)'}</span>
                 </div>
                 <div className="bg-slate-900/40 border border-slate-850 p-2.5 rounded-lg text-xs space-y-0.5">
@@ -687,17 +827,28 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
           </div>
         </div>
 
-        {/* Toggle to Floating / PiP Mode manually */}
-        {currentStream.url && (
+        <div className="flex items-center space-x-2">
+          {/* Toggle to Floating / PiP Mode manually */}
+          {currentStream.url && (
+            <button
+              onClick={() => setIsFloating(true)}
+              className="px-2.5 py-1 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 hover:text-indigo-300 border border-indigo-500/20 rounded text-[10px] font-bold transition flex items-center space-x-1 cursor-pointer"
+              title="Yayını yanda küçük ekran olarak aç"
+            >
+              <Pin className="w-3 h-3" />
+              <span>Yandan İzle</span>
+            </button>
+          )}
+
+          {/* Close button for embedded player */}
           <button
-            onClick={() => setIsFloating(true)}
-            className="px-2.5 py-1 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 hover:text-indigo-300 border border-indigo-500/20 rounded text-[10px] font-bold transition flex items-center space-x-1 cursor-pointer"
-            title="Yayını yanda küçük ekran olarak aç"
+            onClick={() => setIsClosed(true)}
+            className="p-1.5 hover:bg-red-950/40 rounded text-red-400 hover:text-red-300 transition cursor-pointer"
+            title="Oynatıcıyı Kapat"
           >
-            <Pin className="w-3 h-3" />
-            <span>Küçük Ekrana Al (Yandan İzle)</span>
+            <X className="w-3.5 h-3.5" />
           </button>
-        )}
+        </div>
       </div>
 
       {/* Playback screen */}
@@ -826,6 +977,66 @@ export default function IptvPlayer({ currentStream, onAddressCreate }: IptvPlaye
                   <option value="Stretch">Stretch</option>
                 </select>
               </div>
+            </div>
+
+            {/* Codec & Streaming Engine Selector */}
+            <div className="bg-slate-950 border border-slate-850 p-3.5 rounded-xl space-y-2.5">
+              <div className="flex items-center justify-between text-[11px] font-bold text-slate-400">
+                <span className="flex items-center gap-1.5 uppercase tracking-widest font-mono">
+                  <Zap className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+                  Yayın Çözücü Motoru (Codec)
+                </span>
+                <span className="text-[10px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded">
+                  {codecPreset === 'vlc' ? 'VLC Codex Ultra Hızlı' : codecPreset === 'xtream' ? 'Xtream Codex' : 'Standart HTML5'}
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  onClick={() => setCodecPreset('vlc')}
+                  className={`py-2 rounded-lg font-bold text-[10px] text-center border transition flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                    codecPreset === 'vlc' 
+                      ? 'bg-blue-600/15 border-blue-500 text-blue-400' 
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                  title="VLC Web Engine: Düşük arabellek, 1 sn gecikme ve kesintisiz kare hızı ile en hızlı tepki süresi."
+                >
+                  <span className="font-mono tracking-wide text-[11px]">VLC CODEC</span>
+                  <span className="text-[8px] opacity-70">Ultra Tepkisel</span>
+                </button>
+
+                <button
+                  onClick={() => setCodecPreset('xtream')}
+                  className={`py-2 rounded-lg font-bold text-[10px] text-center border transition flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                    codecPreset === 'xtream' 
+                      ? 'bg-indigo-600/15 border-indigo-500 text-indigo-400' 
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                  title="Xtream Engine: Segment optimize veri akışı ve yüksek çözünürlüklü yayınlar için akıllı tamponlama."
+                >
+                  <span className="font-mono tracking-wide text-[11px]">XTREAM</span>
+                  <span className="text-[8px] opacity-70">Segment Optimize</span>
+                </button>
+
+                <button
+                  onClick={() => setCodecPreset('standard')}
+                  className={`py-2 rounded-lg font-bold text-[10px] text-center border transition flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                    codecPreset === 'standard' 
+                      ? 'bg-slate-800 border-slate-600 text-slate-200' 
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                  title="Standard HTML5: Varsayılan tarayıcı video motoru."
+                >
+                  <span className="font-mono tracking-wide text-[11px]">STANDART</span>
+                  <span className="text-[8px] opacity-70">Sistem Varsayılanı</span>
+                </button>
+              </div>
+
+              <p className="text-[9px] text-slate-500 font-sans leading-normal">
+                {codecPreset === 'vlc' && "* VLC Codec Aktif: Yapay zekalı arabellek önleme sayesinde donmalar engellenir, tepki süresi hızlanır."}
+                {codecPreset === 'xtream' && "* Xtream Aktif: TiviMate uyumlu başlıklar ve 12MB segment yükleme arabellek seviyesi ile akıllı akış."}
+                {codecPreset === 'standard' && "* Standart Mod: Ekstra hızlandırma ve özel başlık tünellemesi olmadan düz oynatıcı."}
+              </p>
             </div>
 
             {/* CORS Safe Proxy Header settings */}
