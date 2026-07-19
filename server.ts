@@ -4,6 +4,8 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { Readable } from "stream";
+import JSZip from "jszip";
+import fs from "fs/promises";
 
 dotenv.config();
 
@@ -836,6 +838,53 @@ app.get("/api/playlist/:id", (req, res) => {
   res.setHeader("Content-Disposition", `attachment; filename="playlist_${cleanId}.m3u"`);
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.send(content);
+});
+
+// 4.7. System Update from Zip file (Sistem Dosyaları Güncelleme Servisi)
+app.post("/api/system-update", express.json({ limit: "50mb" }), async (req, res) => {
+  const { zipBase64 } = req.body;
+  if (!zipBase64) {
+    return res.status(400).json({ error: "zipBase64 parametresi gereklidir." });
+  }
+
+  try {
+    const buffer = Buffer.from(zipBase64, 'base64');
+    const zip = await JSZip.loadAsync(buffer);
+    const updatedFiles: string[] = [];
+
+    for (const [filename, file] of Object.entries(zip.files)) {
+      // Prevent security issues like directory traversal (e.g. filename contains ../)
+      if (filename.includes('..') || filename.startsWith('/') || filename.startsWith('~')) {
+        continue;
+      }
+
+      // Ignore node_modules or dist folders inside the ZIP if they exist to keep workspace clean
+      if (filename.startsWith('node_modules/') || filename.startsWith('dist/')) {
+        continue;
+      }
+
+      if (file.dir) {
+        await fs.mkdir(path.join(process.cwd(), filename), { recursive: true });
+      } else {
+        const fullPath = path.join(process.cwd(), filename);
+        // Ensure parent directory exists
+        await fs.mkdir(path.dirname(fullPath), { recursive: true });
+        
+        const contentBuffer = await file.async("nodebuffer");
+        await fs.writeFile(fullPath, contentBuffer);
+        updatedFiles.push(filename);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `${updatedFiles.length} sistem dosyası başarıyla güncellendi.`,
+      files: updatedFiles
+    });
+  } catch (err: any) {
+    console.error("System update error:", err);
+    res.status(500).json({ error: `Sistem güncellemesi sırasında hata oluştu: ${err.message}` });
+  }
 });
 
 // Setup Vite or static serving

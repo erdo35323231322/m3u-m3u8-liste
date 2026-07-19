@@ -5,7 +5,8 @@ import BrowserInspector from './components/BrowserInspector';
 import LinkListUpdateModal from './components/LinkListUpdateModal';
 import M3uListPreview from './components/M3uListPreview';
 import ApkGuideModal from './components/ApkGuideModal';
-import { Tv, Radio, HelpCircle, Check, Sparkles, Shield, Compass, Heart, Smartphone, RefreshCw } from 'lucide-react';
+import SystemUpdateModal from './components/SystemUpdateModal';
+import { Tv, Radio, HelpCircle, Check, Sparkles, Shield, Compass, Heart, Smartphone, RefreshCw, FileArchive } from 'lucide-react';
 import { findLogoForChannel } from './lib/logoDatabase';
 
 export default function App() {
@@ -85,6 +86,7 @@ export default function App() {
 
   const [isLinkUpdateModalOpen, setIsLinkUpdateModalOpen] = useState(false);
   const [isApkModalOpen, setIsApkModalOpen] = useState(false);
+  const [isSystemUpdateModalOpen, setIsSystemUpdateModalOpen] = useState(false);
   const [appVersion, setAppVersion] = useState(() => {
     return localStorage.getItem('streamlink_app_version') || 'v2.5.0';
   });
@@ -213,6 +215,15 @@ export default function App() {
 
           {/* Quick Platform Stats */}
           <div className="flex items-center space-x-3 flex-wrap justify-center sm:justify-end gap-y-2">
+            <button
+              onClick={() => setIsSystemUpdateModalOpen(true)}
+              className="px-3.5 py-1.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 hover:text-blue-300 border border-blue-500/20 rounded text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shrink-0"
+              title="Sistem kaynak dosyalarını bir ZIP dosyası yükleyerek güncelleyin"
+            >
+              <FileArchive className="w-3.5 h-3.5" />
+              <span>Sistem Güncelle (.zip)</span>
+            </button>
+
             <button
               onClick={() => setIsApkModalOpen(true)}
               className="px-3.5 py-1.5 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 hover:text-indigo-300 border border-indigo-500/20 rounded text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shrink-0"
@@ -383,6 +394,15 @@ export default function App() {
       <ApkGuideModal
         isOpen={isApkModalOpen}
         onClose={() => setIsApkModalOpen(false)}
+      />
+
+      {/* System ZIP Files Update Modal */}
+      <SystemUpdateModal
+        isOpen={isSystemUpdateModalOpen}
+        onClose={() => setIsSystemUpdateModalOpen(false)}
+        onUpdateSuccess={(message) => {
+          showNotification(message, 'success');
+        }}
       />
 
     </div>
