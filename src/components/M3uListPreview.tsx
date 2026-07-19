@@ -31,6 +31,13 @@ export default function M3uListPreview({
   const [copied, setCopied] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isLogoSearching, setIsLogoSearching] = useState(false);
+  
+  // Channel single update state
+  const [isUpdatingChannels, setIsUpdatingChannels] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState({ current: 0, total: 0 });
+  const [updateStatusText, setUpdateStatusText] = useState("");
+  const isUpdatingRef = useRef(false);
+
   const [editingItem, setEditingItem] = useState<PlaylistItem | null>(null);
   
   // Custom headers options
@@ -581,6 +588,94 @@ export default function M3uListPreview({
     }
   };
 
+  const handleUpdateChannels = () => {
+    if (items.length === 0) return;
+    
+    setConfirmDialog({
+      title: "Kanalları Akıllı Güncelle & Doğrula",
+      message: "Tüm kanal listeniz tek tek analiz edilecektir. Aktif yayınlar kontrol edilecek, çalışmayan yayınlar için otomatik olarak internetten (kanal adı + m3u/m3u8) güncel yayın linkleri ve yüksek kaliteli logolar aranacaktır. Eğer çalışan yeni bir yayın bulunamazsa o kanal listeden temizlenecektir. Devam etmek istiyor musunuz?",
+      onConfirm: async () => {
+        setIsUpdatingChannels(true);
+        isUpdatingRef.current = true;
+        setUpdateProgress({ current: 0, total: items.length });
+        setUpdateStatusText("Kanal güncelleme işlemi başlatılıyor...");
+
+        const originalItems = [...items];
+        const total = originalItems.length;
+        const finalUpdatedList: PlaylistItem[] = [];
+        
+        let current = 0;
+        const chunkSize = 2; // balanced chunk size to keep things extremely responsive and fast
+        
+        for (let i = 0; i < total; i += chunkSize) {
+          if (!isUpdatingRef.current) {
+            break;
+          }
+          
+          const chunk = originalItems.slice(i, i + chunkSize);
+          await Promise.all(chunk.map(async (channel) => {
+            if (!isUpdatingRef.current) return;
+            
+            try {
+              setUpdateStatusText(`"${channel.name}" analiz ediliyor & güncelleniyor...`);
+              const response = await fetch('/api/update-single-channel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: channel.name,
+                  currentUrl: channel.url,
+                  type: channel.type || 'tv',
+                  currentLogo: channel.logo
+                })
+              });
+              
+              if (response.ok) {
+                const data = await response.json();
+                if (data.active) {
+                  finalUpdatedList.push({
+                    ...channel,
+                    url: data.url,
+                    logo: data.logo || channel.logo,
+                  });
+                } else {
+                  console.log(`Channel ${channel.name} is inactive and no working update found. Removing.`);
+                }
+              } else {
+                // Server failed, keep channel to prevent accidental loss
+                finalUpdatedList.push(channel);
+              }
+            } catch (err) {
+              console.error(err);
+              finalUpdatedList.push(channel);
+            } finally {
+              current++;
+              setUpdateProgress({ current, total });
+            }
+          }));
+        }
+
+        if (isUpdatingRef.current) {
+          // Re-index remaining channels
+          const indexedList = finalUpdatedList.map((item, idx) => ({
+            ...item,
+            id: idx + 1
+          }));
+          onUpdateItems(indexedList);
+          alert(`Güncelleme Tamamlandı!\n\nToplam ${originalItems.length} kanaldan ${indexedList.length} adet aktif kanal güncellenerek korundu. Çalışmayan ve güncel yayını bulunamayan ${originalItems.length - indexedList.length} kanal listeden kaldırıldı.`);
+        }
+        
+        setIsUpdatingChannels(false);
+        isUpdatingRef.current = false;
+      }
+    });
+  };
+
+  const handleStopUpdate = () => {
+    isUpdatingRef.current = false;
+    setIsUpdatingChannels(false);
+    setUpdateStatusText("Güncelleme işlemi durduruldu.");
+  };
+
   const handleClearAll = () => {
     setConfirmDialog({
       title: "Tüm Listeyi Temizle",
@@ -871,7 +966,7 @@ export default function M3uListPreview({
             <p className="text-xs text-slate-500 mt-0.5">Yayınların sırasını ayarlayın, isimleri düzenleyin ve Android TV için optimize edin</p>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             {/* Import Button */}
             <input
               type="file"
@@ -918,6 +1013,17 @@ export default function M3uListPreview({
             >
               {isLogoSearching ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Image className="w-3.5 h-3.5" />}
               <span>Logo Bul & Eşle</span>
+            </button>
+
+            {/* Kanalları Güncelle Button */}
+            <button
+              onClick={handleUpdateChannels}
+              disabled={isUpdatingChannels || items.length === 0}
+              className="px-3.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-xs font-bold rounded flex items-center space-x-1.5 transition cursor-pointer shadow-lg"
+              title="Kanal listesini analiz eder, yayın linklerinin aktifliğini test eder, internetten güncel .m3u8/.m3u linklerini ve logoları bulur. Aktif olmayan kanalları siler."
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isUpdatingChannels ? 'animate-spin' : ''}`} />
+              <span>Kanalları Güncelle</span>
             </button>
 
             {/* Clear All Channels Button */}
@@ -1594,6 +1700,61 @@ export default function M3uListPreview({
                 <span>Birleştirmeyi Başlat</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Channel Update Progress Modal */}
+      {isUpdatingChannels && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-slate-950 border border-slate-850 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-5 text-center relative overflow-hidden">
+            {/* Background ambient glow */}
+            <div className="absolute -top-24 -left-24 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+            {/* Pulsing Sync Icon / 0/100 Indicator Circle */}
+            <div className="relative flex items-center justify-center mx-auto h-24 w-24">
+              <div className="w-24 h-24 rounded-full border-4 border-slate-800 border-t-cyan-500 animate-spin absolute"></div>
+              <div className="w-20 h-20 rounded-full bg-slate-900 border border-slate-850 flex flex-col items-center justify-center z-10 shadow-inner">
+                <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Kanal</span>
+                <span className="text-sm font-black text-slate-100 font-mono">
+                  {updateProgress.current}/{updateProgress.total}
+                </span>
+                <span className="text-[9px] font-bold text-cyan-400 font-mono mt-0.5">
+                  %{Math.round((updateProgress.current / (updateProgress.total || 1)) * 100)}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 z-10 relative">
+              <h3 className="text-sm font-bold text-slate-200 tracking-tight">Kanalları Akıllı Güncelle</h3>
+              <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+                Yayın akışları test ediliyor, çalışmayanlar internette aranıp yenileri ile güncelleniyor ve eksik logolar bulunuyor.
+              </p>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="space-y-2 z-10 relative">
+              <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800/60">
+                <div 
+                  className="bg-gradient-to-r from-cyan-500 to-blue-600 h-full rounded-full transition-all duration-300"
+                  style={{ width: `${(updateProgress.current / (updateProgress.total || 1)) * 100}%` }}
+                ></div>
+              </div>
+              <div className="flex items-center justify-between text-[10px] font-semibold font-mono text-slate-500 px-0.5">
+                <span className="truncate max-w-[280px] text-left text-cyan-400">{updateStatusText}</span>
+                <span className="shrink-0 font-bold text-slate-400">{updateProgress.current} / {updateProgress.total}</span>
+              </div>
+            </div>
+
+            {/* Stop / Cancel Button */}
+            <button
+              onClick={handleStopUpdate}
+              className="w-full py-2 bg-rose-950/20 hover:bg-rose-900/45 border border-rose-900/30 text-rose-400 text-xs font-bold rounded-xl transition cursor-pointer flex items-center justify-center space-x-1.5 border-b-2 border-rose-950 active:border-b-0 active:translate-y-0.5"
+            >
+              <X className="w-4 h-4" />
+              <span>Güncellemeyi Durdur</span>
+            </button>
           </div>
         </div>
       )}

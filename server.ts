@@ -344,6 +344,150 @@ ${listStr}
   }
 });
 
+// 4.1.5. AI-Powered Single Channel Stream & Logo Update
+app.post("/api/update-single-channel", async (req, res) => {
+  const { name, currentUrl, type, currentLogo } = req.body;
+
+  if (!name || !currentUrl) {
+    return res.status(400).json({ error: "Kanal adı ve mevcut URL gereklidir." });
+  }
+
+  // Helper to check stream responsiveness and compatibility
+  const checkStreamActive = async (url: string): Promise<boolean> => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500); // 3.5 seconds timeout
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        const contentType = (response.headers.get('content-type') || '').toLowerCase();
+        // Return true if status is 200/206 and has video/audio/playlist headers or general success
+        if (
+          contentType.includes('mpegurl') || 
+          contentType.includes('m3u8') || 
+          contentType.includes('video') || 
+          contentType.includes('audio') || 
+          contentType.includes('application/octet-stream') ||
+          response.status === 200 ||
+          response.status === 206
+        ) {
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  let isCurrentWorking = await checkStreamActive(currentUrl);
+  let finalUrl = currentUrl;
+  let finalLogo = currentLogo || "";
+  let updated = false;
+
+  // If not working, use Gemini to search/guess a working m3u/m3u8 link
+  if (!isCurrentWorking && ai) {
+    try {
+      const prompt = `Görevin, çalışmayan veya güncelliğini yitirmiş şu TV/Radyo kanalının yayın linkini internette arayıp güncel, çalışan ve canlı bir yayın akış (.m3u8, .mp3, .aac vb.) adresi bulmaktır:
+Kanal Adı: "${name}"
+Türü: ${type === 'radyo' ? 'Radyo' : 'Canlı TV'}
+Eski Çalışmayan URL: "${currentUrl}"
+
+Talimatlar:
+1. İnternetteki popüler, güvenilir ve herkese açık yayın listelerini (github.com/iptv-org vb.) göz önüne alarak bu kanal için en az 4 adet çalışan alternatif güncel M3U8 veya canlı akış adayı üret.
+2. Ayrıca, kanala ait resmi, yüksek kaliteli, CORS engeline takılmayan güncel logo URL'sini (Wikipedia, Wikimedia Commons vb.) bul.
+3. Sonuçları JSON formatında döndür.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              candidates: {
+                type: Type.ARRAY,
+                description: "En az 4 adet canlı yayın akış (.m3u8 veya radyo ses akışı) URL adayı (öncelikli çalışan sırayla)",
+                items: { type: Type.STRING }
+              },
+              logo: { type: Type.STRING, description: "Kanal logosu URL'si" }
+            },
+            required: ["candidates"]
+          }
+        }
+      });
+
+      const data = JSON.parse(response.text?.trim() || "{}");
+      if (data.logo && (!finalLogo || finalLogo.trim() === "")) {
+        finalLogo = data.logo.trim();
+        updated = true;
+      }
+
+      if (data.candidates && Array.isArray(data.candidates)) {
+        for (const candidate of data.candidates) {
+          const cleanCandidate = (candidate || "").trim();
+          if (cleanCandidate && cleanCandidate.startsWith("http")) {
+            const isCandidateWorking = await checkStreamActive(cleanCandidate);
+            if (isCandidateWorking) {
+              finalUrl = cleanCandidate;
+              isCurrentWorking = true;
+              updated = true;
+              break;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`AI channel update search failed for ${name}:`, err);
+    }
+  }
+
+  // Find logo if missing and we still don't have one
+  if ((!finalLogo || finalLogo.trim() === "") && ai) {
+    try {
+      const logoPrompt = `"${name}" kanalı için yüksek kaliteli, gerçek, CORS uyumlu ve herkese açık (Wikimedia, Wikipedia vb.) bir logo resmi bul. JSON formatında 'logo' parametresi olarak geri dön. Bulamadıysan boş bırak.`;
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: logoPrompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              logo: { type: Type.STRING }
+            },
+            required: ["logo"]
+          }
+        }
+      });
+      const data = JSON.parse(response.text?.trim() || "{}");
+      if (data.logo && data.logo.trim().startsWith("http")) {
+        finalLogo = data.logo.trim();
+        updated = true;
+      }
+    } catch (e) {}
+  }
+
+  res.json({
+    success: true,
+    name,
+    originalUrl: currentUrl,
+    url: finalUrl,
+    logo: finalLogo,
+    active: isCurrentWorking,
+    updated: updated || (finalUrl !== currentUrl) || (finalLogo !== currentLogo)
+  });
+});
+
 // 4.2. Auto-Update Service for fetching latest version from ai.studio app files
 app.post("/api/check-update", (req, res) => {
   const { currentVersion } = req.body;

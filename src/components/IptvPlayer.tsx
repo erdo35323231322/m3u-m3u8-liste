@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { Play, Square, Volume2, VolumeX, Shield, ShieldAlert, Zap, Radio, Tv, Settings, Globe, HelpCircle, RefreshCw, X, Maximize2, Minimize2, Move } from 'lucide-react';
+import { Play, Square, Volume2, VolumeX, Shield, ShieldAlert, Zap, Radio, Tv, Settings, Globe, HelpCircle, RefreshCw, X, Maximize2, Minimize2, Move, Expand, Shrink } from 'lucide-react';
 import { PlaylistItem } from '../types';
 
 interface IptvPlayerProps {
@@ -20,7 +20,59 @@ export default function IptvPlayer({
 }: IptvPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isHalfSize, setIsHalfSize] = useState<boolean>(() => {
+    return localStorage.getItem('streamlink_player_half_size') === 'true';
+  });
+  const [isCustomFullscreen, setIsCustomFullscreen] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('streamlink_player_half_size', isHalfSize ? 'true' : 'false');
+  }, [isHalfSize]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsCustomFullscreen(document.fullscreenElement === containerRef.current);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isCustomFullscreen) {
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        } else {
+          setIsCustomFullscreen(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isCustomFullscreen]);
+
+  const toggleFullscreen = async () => {
+    if (!containerRef.current) return;
+    try {
+      if (!document.fullscreenElement) {
+        if (containerRef.current.requestFullscreen) {
+          await containerRef.current.requestFullscreen();
+        } else {
+          setIsCustomFullscreen(!isCustomFullscreen);
+        }
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      console.warn("Native fullscreen failed or blocked, falling back to viewport-fullscreen:", err);
+      setIsCustomFullscreen(!isCustomFullscreen);
+    }
+  };
+
   const [useProxy, setUseProxy] = useState(true);
   const [proxyUserAgent, setProxyUserAgent] = useState('VLC/3.0.18');
   const [proxyReferer, setProxyReferer] = useState('');
@@ -234,7 +286,17 @@ export default function IptvPlayer({
   };
 
   return (
-    <div id="iptv-player-container" className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-2xl flex flex-col h-full">
+    <div 
+      ref={containerRef}
+      id="iptv-player-container" 
+      className={`bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-2xl flex flex-col transition-all duration-300 ${
+        isCustomFullscreen 
+          ? 'fixed inset-0 z-[9999] w-screen h-screen m-0 p-0' 
+          : isHalfSize 
+            ? 'w-full max-w-[380px] mx-auto text-xs my-2' 
+            : 'w-full h-full'
+      }`}
+    >
       {/* Player Premium Title Bar */}
       <div className="bg-slate-900 px-4 py-2.5 flex items-center justify-between border-b border-slate-850/60 select-none">
         <div className="flex items-center space-x-2 min-w-0">
@@ -246,6 +308,26 @@ export default function IptvPlayer({
           <span className="text-xs font-bold text-slate-200 truncate">{currentStream.name || 'Önizleme Oynatıcı'}</span>
         </div>
         <div className="flex items-center space-x-1.5 shrink-0">
+          {/* %50 Boyutlandırma / Küçültme Butonu */}
+          {!isFloating && (
+            <button
+              onClick={() => setIsHalfSize(!isHalfSize)}
+              className={`p-1 hover:bg-slate-850 rounded transition cursor-pointer ${isHalfSize ? 'text-blue-450 bg-blue-500/10 border border-blue-500/20' : 'text-slate-400 hover:text-slate-200'}`}
+              title={isHalfSize ? "Normal Boyuta Dön (%100)" : "Küçük Boyuta Geç (%50 Oranında Küçült)"}
+            >
+              <Shrink className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Tam Ekran Butonu */}
+          <button
+            onClick={toggleFullscreen}
+            className={`p-1 hover:bg-slate-850 rounded transition cursor-pointer ${isCustomFullscreen ? 'text-blue-450 bg-blue-500/10 border border-blue-500/20' : 'text-slate-400 hover:text-slate-200'}`}
+            title={isCustomFullscreen ? "Tam Ekrandan Çık (Esc)" : "Tam Ekran Yap"}
+          >
+            <Expand className="w-4 h-4" />
+          </button>
+
           {onToggleFloating && (
             <button
               onClick={onToggleFloating}
@@ -268,7 +350,13 @@ export default function IptvPlayer({
       </div>
 
       {/* Player Screen */}
-      <div className="relative flex-1 bg-black flex items-center justify-center min-h-[220px] max-h-[480px]">
+      <div className={`relative bg-black flex items-center justify-center transition-all duration-300 ${
+        isCustomFullscreen 
+          ? 'flex-1 h-full min-h-0 max-h-none' 
+          : isHalfSize 
+            ? 'min-h-[140px] max-h-[220px] flex-1' 
+            : 'min-h-[220px] max-h-[480px] flex-1'
+      }`}>
         {isRadio ? (
           /* Radio Screen Visualizer */
           <div className="flex flex-col items-center justify-center space-y-6 text-center p-8 w-full h-full bg-gradient-to-b from-slate-950 to-slate-900">
@@ -364,7 +452,9 @@ export default function IptvPlayer({
       </div>
 
       {/* Control Bar */}
-      <div className="bg-slate-900 border-t border-slate-800/80 p-4 space-y-4">
+      <div className={`bg-slate-900 border-t border-slate-800/80 transition-all duration-300 ${
+        isHalfSize ? 'p-2.5 space-y-2.5' : 'p-4 space-y-4'
+      }`}>
         {/* Info & Action Panel */}
         <div className="flex flex-col gap-4">
           <div className="min-w-0">
@@ -429,6 +519,32 @@ export default function IptvPlayer({
 
           {/* Right: Proxy option */}
           <div className="flex items-center gap-2">
+            {!isFloating && (
+              <button
+                onClick={() => setIsHalfSize(!isHalfSize)}
+                className={`p-1.5 rounded transition border cursor-pointer ${
+                  isHalfSize 
+                    ? 'bg-blue-600/20 text-blue-450 border border-blue-500/30' 
+                    : 'bg-slate-800 text-slate-400 hover:text-blue-450 border border-slate-700/60'
+                }`}
+                title={isHalfSize ? "Normal Boyuta Dön (%100)" : "Küçük Boyuta Geç (%50 Oranında Küçült)"}
+              >
+                <Shrink className="w-4 h-4" />
+              </button>
+            )}
+
+            <button
+              onClick={toggleFullscreen}
+              className={`p-1.5 rounded transition border cursor-pointer ${
+                isCustomFullscreen 
+                  ? 'bg-blue-600/20 text-blue-450 border border-blue-500/30' 
+                  : 'bg-slate-800 text-slate-400 hover:text-blue-450 border border-slate-700/60'
+              }`}
+              title={isCustomFullscreen ? "Tam Ekrandan Çık (Esc)" : "Tam Ekran Yap"}
+            >
+              <Expand className="w-4 h-4" />
+            </button>
+
             {onToggleFloating && (
               <button
                 onClick={onToggleFloating}
