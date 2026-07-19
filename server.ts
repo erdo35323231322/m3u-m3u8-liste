@@ -9,9 +9,6 @@ import fs from "fs/promises";
 
 dotenv.config();
 
-// Bypass strict TLS verification for custom IPTV/M3U stream sources
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 const app = express();
 const PORT = 3000;
 
@@ -530,83 +527,21 @@ function parseM3uToMap(m3uContent: string): Map<string, string[]> {
   return map;
 }
 
-// Helper: Test if a streaming URL is online/active with a multi-stage fallback (different methods, headers, and user-agents)
+// Helper: Test if a streaming URL is online/active
 async function testUrl(url: string): Promise<boolean> {
-  if (!url || !url.startsWith("http")) return false;
-
-  const isPlaylist = url.includes(".m3u8") || url.includes(".mpd") || url.includes(".m3u") || url.includes("playlist");
-  
-  // List of high-compat User-Agents to test against
-  const userAgents = [
-    "VLC/3.0.18",
-    "TiviMate/4.7.0 (Xiaomi/MiBOX4)",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-  ];
-
-  for (const userAgent of userAgents) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500); // 2.5 second timeout for rapid checks
-      
-      const headers: Record<string, string> = {
-        "User-Agent": userAgent,
-        "Accept": "*/*"
-      };
-
-      let method = "GET";
-      if (!isPlaylist) {
-        // For heavy TS or MP4 files, first try HEAD request to check availability without downloading data
-        method = "HEAD";
-      } else {
-        // For text playlists, download the small manifest
-        method = "GET";
-      }
-
-      const response = await fetch(url, {
-        method,
-        headers,
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      // 200 OK or 206 Partial Content or other redirection are all valid signs of live content
-      if (response.ok || response.status === 206 || response.status === 301 || response.status === 302) {
-        return true;
-      }
-
-      // If HEAD failed with 405 (Method Not Allowed), or 403, retry with GET and Range
-      if (!isPlaylist && (response.status === 405 || response.status === 403 || response.status === 400)) {
-        const getController = new AbortController();
-        const getTimeoutId = setTimeout(() => getController.abort(), 2500);
-        
-        const rangeResponse = await fetch(url, {
-          method: "GET",
-          headers: {
-            ...headers,
-            "Range": "bytes=0-1024"
-          },
-          signal: getController.signal
-        });
-
-        clearTimeout(getTimeoutId);
-        if (rangeResponse.ok || rangeResponse.status === 206) {
-          return true;
-        }
-      }
-    } catch (err) {
-      // Continue to next User-Agent or fallback attempt
-    }
-  }
-
-  // Final fallback: try a standard fast fetch with no headers at all
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
+    
     const response = await fetch(url, {
       method: "GET",
+      headers: {
+        "User-Agent": "VLC/3.0.18",
+        "Range": "bytes=0-1024" // Request only first few bytes to keep it super fast!
+      },
       signal: controller.signal
     });
+    
     clearTimeout(timeoutId);
     return response.ok || response.status === 206;
   } catch (err) {
