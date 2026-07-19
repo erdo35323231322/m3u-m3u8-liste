@@ -592,9 +592,9 @@ export default function BrowserInspector({ onSelectStream, onAddStreamToList }: 
                 <div className="max-h-[350px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                   {extractedApkUrls.filter(item => {
                     const matchesCategory = apkFilter === 'all' || item.category === apkFilter;
-                    const matchesSearch = (item.url || '').toLowerCase().includes((apkSearchQuery || '').toLowerCase()) || 
-                                          (item.name || '').toLowerCase().includes((apkSearchQuery || '').toLowerCase()) ||
-                                          (item.sourceFile || '').toLowerCase().includes((apkSearchQuery || '').toLowerCase());
+                    const matchesSearch = item.url.toLowerCase().includes(apkSearchQuery.toLowerCase()) || 
+                                          item.name.toLowerCase().includes(apkSearchQuery.toLowerCase()) ||
+                                          item.sourceFile.toLowerCase().includes(apkSearchQuery.toLowerCase());
                     return matchesCategory && matchesSearch;
                   }).length === 0 ? (
                     <div className="text-center py-8 bg-slate-900/20 border border-slate-850 rounded text-[11px] text-slate-500">
@@ -603,9 +603,9 @@ export default function BrowserInspector({ onSelectStream, onAddStreamToList }: 
                   ) : (
                     extractedApkUrls.filter(item => {
                       const matchesCategory = apkFilter === 'all' || item.category === apkFilter;
-                      const matchesSearch = (item.url || '').toLowerCase().includes((apkSearchQuery || '').toLowerCase()) || 
-                                            (item.name || '').toLowerCase().includes((apkSearchQuery || '').toLowerCase()) ||
-                                            (item.sourceFile || '').toLowerCase().includes((apkSearchQuery || '').toLowerCase());
+                      const matchesSearch = item.url.toLowerCase().includes(apkSearchQuery.toLowerCase()) || 
+                                            item.name.toLowerCase().includes(apkSearchQuery.toLowerCase()) ||
+                                            item.sourceFile.toLowerCase().includes(apkSearchQuery.toLowerCase());
                       return matchesCategory && matchesSearch;
                     }).map((item, index) => (
                       <div key={index} className="bg-slate-900/60 border border-slate-850 p-3 rounded-lg flex flex-col space-y-2 hover:border-slate-800 transition">

@@ -2,12 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { PlaylistItem, Playlist } from './types';
 import IptvPlayer from './components/IptvPlayer';
 import BrowserInspector from './components/BrowserInspector';
-import LinkListUpdateModal from './components/LinkListUpdateModal';
+import SoftwareUpdateModal from './components/SoftwareUpdateModal';
 import M3uListPreview from './components/M3uListPreview';
-import ApkGuideModal from './components/ApkGuideModal';
-import SystemUpdateModal from './components/SystemUpdateModal';
-import { Tv, Radio, HelpCircle, Check, Sparkles, Shield, Compass, Heart, Smartphone, RefreshCw, FileArchive } from 'lucide-react';
+import { Tv, Radio, HelpCircle, Check, Sparkles, Shield, Compass, Heart, Smartphone, RefreshCw, X, Minimize2, Maximize2, Move, Eye } from 'lucide-react';
 import { findLogoForChannel } from './lib/logoDatabase';
+import { motion } from 'motion/react';
 
 export default function App() {
   // Multiple playlists state with localStorage fallback
@@ -84,39 +83,26 @@ export default function App() {
     logo: "https://upload.wikimedia.org/wikipedia/commons/e/e8/TRT_1_logo.svg"
   });
 
-  const [isLinkUpdateModalOpen, setIsLinkUpdateModalOpen] = useState(false);
-  const [isApkModalOpen, setIsApkModalOpen] = useState(false);
-  const [isSystemUpdateModalOpen, setIsSystemUpdateModalOpen] = useState(false);
-  const [appVersion, setAppVersion] = useState(() => {
-    return localStorage.getItem('streamlink_app_version') || 'v2.5.0';
+  const [isFloating, setIsFloating] = useState<boolean>(() => {
+    return localStorage.getItem('streamlink_player_floating') === 'true';
+  });
+  const [isPlayerVisible, setIsPlayerVisible] = useState<boolean>(() => {
+    return localStorage.getItem('streamlink_player_visible') !== 'false';
   });
 
-  const [notification, setNotification] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
-
-  const [deviceInfo, setDeviceInfo] = useState<{ type: string; label: string }>({
-    type: 'unknown',
-    label: 'Cihaz: Algılanıyor...'
-  });
-
-  // Automatically detect current device type on mount
   useEffect(() => {
-    const ua = navigator.userAgent;
-    const width = window.innerWidth;
-    let label = 'Cihaz: Masaüstü Bilgisayar (Desktop)';
-    let type = 'desktop';
+    localStorage.setItem('streamlink_player_floating', isFloating ? 'true' : 'false');
+  }, [isFloating]);
 
-    if (/SmartTV|AppleTV|GoogleTV|AndroidTV|Large Screen|HbbTV|Tizen|WebOS|Roku|Viera|DnaPlay|Cast/i.test(ua)) {
-      label = 'Cihaz: Android TV / Smart TV';
-      type = 'tv';
-    } else if (/iPad|PlayBook|Silk/i.test(ua) || (width >= 768 && width <= 1024)) {
-      label = 'Cihaz: Android Tablet / iPad';
-      type = 'tablet';
-    } else if (/Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua)) {
-      label = 'Cihaz: Mobil Telefon (Mobile)';
-      type = 'mobile';
-    }
-    setDeviceInfo({ type, label });
-  }, []);
+  useEffect(() => {
+    localStorage.setItem('streamlink_player_visible', isPlayerVisible ? 'true' : 'false');
+  }, [isPlayerVisible]);
+
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState(() => {
+    return localStorage.getItem('streamlink_app_version') || 'v2.4.0';
+  });
+  const [notification, setNotification] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
 
   // Auto hide notifications
   useEffect(() => {
@@ -169,6 +155,7 @@ export default function App() {
 
   const handleSelectStream = (stream: { name: string; url: string; type: 'tv' | 'radyo'; logo?: string }) => {
     setActiveStream(stream);
+    setIsPlayerVisible(true);
     showNotification(`"${stream.name}" önizleme oynatıcıya yüklendi.`, 'info');
   };
 
@@ -202,7 +189,7 @@ export default function App() {
               <div className="flex items-center space-x-2 justify-center sm:justify-start">
                 <h1 className="text-white font-bold tracking-tight text-lg">StreamLink Studio</h1>
                 <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">{appVersion}</span>
-                {appVersion !== 'v2.5.0' && (
+                {appVersion === 'v2.4.0' && (
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
@@ -216,40 +203,20 @@ export default function App() {
           {/* Quick Platform Stats */}
           <div className="flex items-center space-x-3 flex-wrap justify-center sm:justify-end gap-y-2">
             <button
-              onClick={() => setIsSystemUpdateModalOpen(true)}
-              className="px-3.5 py-1.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 hover:text-blue-300 border border-blue-500/20 rounded text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shrink-0"
-              title="Sistem kaynak dosyalarını bir ZIP dosyası yükleyerek güncelleyin"
-            >
-              <FileArchive className="w-3.5 h-3.5" />
-              <span>Sistem Güncelle (.zip)</span>
-            </button>
-
-            <button
-              onClick={() => setIsApkModalOpen(true)}
+              onClick={() => setIsUpdateModalOpen(true)}
               className="px-3.5 py-1.5 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 hover:text-indigo-300 border border-indigo-500/20 rounded text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shrink-0"
-              title="Android TV & Mobil APK Kurulum Kılavuzunu Görüntüle"
+              title="Yazılımı otomatik güncelleyin veya Android APK dosyasını derleyip indirin"
             >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>APK & TV Kurulumu</span>
+              <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
+              <span>Sistem & APK Güncelle</span>
+              {appVersion === 'v2.4.0' && (
+                <span className="bg-indigo-500 text-white font-bold text-[8px] px-1.5 py-0.25 rounded">YENİ</span>
+              )}
             </button>
 
-            {appVersion === 'v2.5.0' && (
-              <button
-                onClick={() => setIsLinkUpdateModalOpen(true)}
-                className="px-3.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/35 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 rounded text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shrink-0 shadow-[0_0_15px_rgba(16,185,129,0.15)] animate-pulse"
-                title="Yayın listesi linklerini otomatik ara, test et ve güncelle"
-              >
-                <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
-                <span>Link Liste Güncelle</span>
-              </button>
-            )}
-
-            <div className="bg-slate-900 px-3 py-1.5 rounded border border-slate-800 flex items-center space-x-2 text-xs" title="Sistem tarafından otomatik algılanan aktif cihaz">
-              <span className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span className="text-slate-300 font-medium">{deviceInfo.label}</span>
+            <div className="bg-slate-900 px-3 py-1.5 rounded border border-slate-800 flex items-center space-x-2 text-xs">
+              <div className="w-2 h-2 bg-green-500 rounded-full" />
+              <span className="text-slate-400">Cihaz Hazır: Android TV / Mobile</span>
             </div>
             
             <a 
@@ -265,54 +232,29 @@ export default function App() {
       {/* Hero Section Info Card */}
       <section className="bg-gradient-to-b from-slate-950 to-slate-900 border-b border-slate-850 py-6">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex flex-col gap-4">
-            
-            <div className="bg-slate-950/40 rounded-xl border border-slate-800 p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center space-x-2 text-blue-400 font-bold text-[10px] uppercase tracking-widest">
-                  <Sparkles className="w-3.5 h-3.5 fill-current" />
-                  <span>Nasıl Çalışır?</span>
-                </div>
-                <p className="text-xs text-slate-400 leading-relaxed max-w-3xl">
-                  Bu uygulama, Android cihazlar için özel M3U/M3U8 çalma listeleri oluşturmanuzu sağlar. Eklenen her yeni yayın otomatik olarak <span className="text-blue-400 font-mono font-bold">1, 2, 3</span> şeklinde sıralanarak yeni satıra yazılır. Listeyi Android TV'nize aktardığınızda kanallarınız tam belirttiğiniz düzende açılır.
+          <div className="bg-slate-950/40 rounded-xl border border-slate-800 p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center space-x-2 text-blue-400 font-bold text-[10px] uppercase tracking-widest">
+                <Sparkles className="w-3.5 h-3.5 fill-current" />
+                <span>Nasıl Çalışır?</span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed max-w-3xl">
+                Bu uygulama, Android cihazlar için özel M3U/M3U8 çalma listeleri oluşturmanuzu sağlar. Eklenen her yeni yayın otomatik olarak <span className="text-blue-400 font-mono font-bold">1, 2, 3</span> şeklinde sıralanarak yeni satıra yazılır. Listeyi Android TV'nize aktardığınızda kanallarınız tam belirttiğiniz düzende açılır.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4 w-full md:w-auto shrink-0 border-t border-slate-900 md:border-0 pt-3 md:pt-0">
+              <div className="bg-slate-900 border border-slate-800 p-3 rounded text-center">
+                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Ekli Kanallar</p>
+                <p className="text-lg font-bold text-blue-400 mt-1 font-mono">{items.length}</p>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 p-3 rounded text-center">
+                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Oynatıcı</p>
+                <p className="text-xs font-bold text-indigo-400 mt-2 flex items-center justify-center gap-1">
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>CORS Aktif</span>
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-4 w-full md:w-auto shrink-0 border-t border-slate-900 md:border-0 pt-3 md:pt-0">
-                <div className="bg-slate-900 border border-slate-800 p-3 rounded text-center">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Ekli Kanallar</p>
-                  <p className="text-lg font-bold text-blue-400 mt-1 font-mono">{items.length}</p>
-                </div>
-                <div className="bg-slate-900 border border-slate-800 p-3 rounded text-center">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Oynatıcı</p>
-                  <p className="text-xs font-bold text-indigo-400 mt-2 flex items-center justify-center gap-1">
-                    <Shield className="w-3.5 h-3.5" />
-                    <span>CORS Aktif</span>
-                  </p>
-                </div>
-              </div>
             </div>
-
-            {appVersion === 'v2.5.0' && (
-              <div className="bg-emerald-950/20 border border-emerald-500/20 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-[0_0_25px_rgba(16,185,129,0.15)]">
-                <div className="flex items-center space-x-3.5">
-                  <div className="w-10 h-10 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 flex items-center justify-center">
-                    <RefreshCw className="w-5 h-5 animate-spin-slow" />
-                  </div>
-                  <div>
-                    <h4 className="text-white font-bold text-sm">Yeni Sürüm Özelliği: Akıllı Link & Liste Güncelleme</h4>
-                    <p className="text-xs text-slate-400">Tüm internet sitelerini, IPTV sayfalarını ve Gemini AI'ı tarayarak kırık veya değişen yayın linklerini otomatik yenileyin!</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setIsLinkUpdateModalOpen(true)}
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition duration-200 cursor-pointer shadow-lg hover:scale-105 flex items-center space-x-2 shrink-0 border border-emerald-500/30"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  <span>Link Liste Güncelle</span>
-                </button>
-              </div>
-            )}
-
           </div>
         </div>
       </section>
@@ -325,10 +267,63 @@ export default function App() {
           
           {/* Left: 5 Columns for the Built-In Media Player */}
           <div className="lg:col-span-5 h-full">
-            <IptvPlayer 
-              currentStream={activeStream} 
-              onAddressCreate={handleAddStream}
-            />
+            {!isPlayerVisible ? (
+              /* Player closed state placeholder */
+              <div className="bg-slate-950/40 border border-slate-800 border-dashed rounded-xl p-6 flex flex-col items-center justify-center text-center min-h-[350px] space-y-4">
+                <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500">
+                  <Tv className="w-6 h-6 text-slate-500" />
+                </div>
+                <div className="max-w-xs">
+                  <p className="text-xs font-semibold text-slate-300">Oynatıcı Kapalı</p>
+                  <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                    Önizleme oynatıcı kapatıldı. Kanal listesinden herhangi bir kanala tıklayarak oynatıcıyı açabilirsiniz veya aşağıdaki butona basabilirsiniz.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsPlayerVisible(true)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-xs transition cursor-pointer flex items-center space-x-1.5 shadow-lg shadow-blue-500/10"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Oynatıcıyı Göster</span>
+                </button>
+              </div>
+            ) : isFloating ? (
+              /* Player in floating mode placeholder in the grid */
+              <div className="bg-slate-950/40 border border-slate-800 border-dashed rounded-xl p-6 flex flex-col items-center justify-center text-center min-h-[350px] space-y-4">
+                <div className="w-12 h-12 rounded-full bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                  <Move className="w-6 h-6 text-blue-400 animate-pulse" />
+                </div>
+                <div className="max-w-xs">
+                  <p className="text-xs font-semibold text-blue-400">Yüzen Oynatıcı Aktif</p>
+                  <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                    Oynatıcı şu an küçük boyutlu olarak ekranın üzerinde serbestçe gezdirilebilir (Yüzen Mod) durumdadır. Sürükleyerek konumlandırabilirsiniz.
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={() => setIsFloating(false)}
+                    className="px-3 py-1.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded text-[11px] font-bold transition cursor-pointer"
+                  >
+                    Normal Görünüme Döndür
+                  </button>
+                  <button
+                    onClick={() => setIsPlayerVisible(false)}
+                    className="px-3 py-1.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-450 border border-rose-500/20 rounded text-[11px] font-bold transition cursor-pointer"
+                  >
+                    Oynatıcıyı Kapat
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Normal inline mode player */
+              <IptvPlayer 
+                currentStream={activeStream} 
+                onAddressCreate={handleAddStream}
+                isFloating={false}
+                onToggleFloating={() => setIsFloating(true)}
+                onClose={() => setIsPlayerVisible(false)}
+              />
+            )}
           </div>
 
           {/* Right: 7 Columns for Advanced Web Sniffer & Inspector */}
@@ -379,31 +374,37 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Link List Update Modal */}
-      <LinkListUpdateModal
-        isOpen={isLinkUpdateModalOpen}
-        onClose={() => setIsLinkUpdateModalOpen(false)}
-        items={items}
-        onUpdateItems={(newItems) => {
-          setPlaylists(prev => prev.map(p => p.id === activePlaylistId ? { ...p, items: newItems } : p));
-          showNotification('Kanal listesi başarıyla güncellendi!', 'success');
+      {/* Software Update and APK Builder Modal */}
+      <SoftwareUpdateModal 
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+        currentVersion={appVersion}
+        onUpdateSuccess={(newVersion) => {
+          setAppVersion(newVersion);
+          localStorage.setItem('streamlink_app_version', newVersion);
+          showNotification(`Yazılım başarıyla ${newVersion} sürümüne güncellendi!`, 'success');
         }}
       />
 
-      {/* APK & Android TV Installation Guide Modal */}
-      <ApkGuideModal
-        isOpen={isApkModalOpen}
-        onClose={() => setIsApkModalOpen(false)}
-      />
-
-      {/* System ZIP Files Update Modal */}
-      <SystemUpdateModal
-        isOpen={isSystemUpdateModalOpen}
-        onClose={() => setIsSystemUpdateModalOpen(false)}
-        onUpdateSuccess={(message) => {
-          showNotification(message, 'success');
-        }}
-      />
+      {/* Floating Draggable Mini Player */}
+      {isPlayerVisible && isFloating && (
+        <motion.div
+          drag
+          dragMomentum={false}
+          dragElastic={0.05}
+          initial={{ x: 0, y: 0 }}
+          className="fixed bottom-6 right-6 z-50 w-[320px] md:w-[360px] shadow-2xl rounded-2xl overflow-hidden border border-blue-500/30 bg-slate-950 flex flex-col"
+          style={{ touchAction: 'none' }}
+        >
+          <IptvPlayer 
+            currentStream={activeStream} 
+            onAddressCreate={handleAddStream}
+            isFloating={true}
+            onToggleFloating={() => setIsFloating(false)}
+            onClose={() => setIsPlayerVisible(false)}
+          />
+        </motion.div>
+      )}
 
     </div>
   );

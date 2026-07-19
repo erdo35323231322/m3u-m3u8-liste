@@ -60,25 +60,14 @@ export default function M3uListPreview({
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  // Bulut Otomatik Senkronizasyon states
-  const [isCloudPublishing, setIsCloudPublishing] = useState(false);
-  const [cloudPublishSuccess, setCloudPublishSuccess] = useState(false);
-  const [lastPublishedTime, setLastPublishedTime] = useState<string>(() => {
-    return localStorage.getItem('streamlink_last_published') || 'Otomatik (Sürekli)';
-  });
-
   // Group and Sort state
   const [autoGroupAndSort, setAutoGroupAndSort] = useState(false);
 
-  // Link Autodetect, test and update states
-  const [isUpdatingLinks, setIsUpdatingLinks] = useState(false);
-  const [linkUpdateProgress, setLinkUpdateProgress] = useState<{
-    total: number;
-    processed: number;
-    updated: number;
-    verified: number;
-    failed: number;
-    currentChannel: string;
+  // Custom confirmation dialog state to bypass native blocked iframe confirm()
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
   } | null>(null);
 
   // Helper to group items by their group and sort alphabetically within
@@ -264,26 +253,34 @@ export default function M3uListPreview({
     if (!playlistToDelete) return;
 
     if (playlists.length <= 1) {
-      if (confirm(`"${playlistToDelete.name}" son kalan çalma listenizdir. Bu çalma listesini silip yeni, boş bir liste oluşturmak istediğinizden emin misiniz?`)) {
-        const newId = `playlist_${Date.now()}`;
-        const newPlaylist: Playlist = {
-          id: newId,
-          name: 'Ana Çalma Listesi',
-          items: []
-        };
-        onUpdatePlaylists([newPlaylist]);
-        onSelectPlaylist?.(newId);
-      }
+      setConfirmDialog({
+        title: "Son Çalma Listesini Sil",
+        message: `"${playlistToDelete.name}" son kalan çalma listenizdir. Bu çalma listesini silip yeni, boş bir liste oluşturmak istediğinizden emin misiniz?`,
+        onConfirm: () => {
+          const newId = `playlist_${Date.now()}`;
+          const newPlaylist: Playlist = {
+            id: newId,
+            name: 'Ana Çalma Listesi',
+            items: []
+          };
+          onUpdatePlaylists([newPlaylist]);
+          onSelectPlaylist?.(newId);
+        }
+      });
       return;
     }
 
-    if (confirm(`"${playlistToDelete.name}" çalma listesini ve içindeki tüm kanalları silmek istediğinizden emin misiniz?`)) {
-      const filtered = playlists.filter(p => p.id !== playlistIdToDelete);
-      onUpdatePlaylists(filtered);
-      if (activePlaylistId === playlistIdToDelete) {
-        onSelectPlaylist?.(filtered[0].id);
+    setConfirmDialog({
+      title: "Çalma Listesini Sil",
+      message: `"${playlistToDelete.name}" çalma listesini ve içindeki tüm kanalları silmek istediğinizden emin misiniz?`,
+      onConfirm: () => {
+        const filtered = playlists.filter(p => p.id !== playlistIdToDelete);
+        onUpdatePlaylists(filtered);
+        if (activePlaylistId === playlistIdToDelete) {
+          onSelectPlaylist?.(filtered[0].id);
+        }
       }
-    }
+    });
   };
 
   const handleRenamePlaylist = (id: string, newName: string) => {
@@ -415,7 +412,7 @@ export default function M3uListPreview({
           if (groupMatch) currentItem.group = groupMatch[1];
 
           // Determine type based on logo or group
-          const isRadio = !!(currentItem.group && (currentItem.group.toLowerCase().includes('radio') || currentItem.group.toLowerCase().includes('radyo')));
+          const isRadio = (currentItem.group?.toLowerCase().includes('radio') || currentItem.group?.toLowerCase().includes('radyo'));
           currentItem.type = isRadio ? 'radyo' : 'tv';
 
         } else if (!line.startsWith('#')) {
@@ -515,126 +512,83 @@ export default function M3uListPreview({
         return;
       }
 
+      setIsLogoSearching(false);
+
       // 2. Kalan kanallar için Gemini Yapay Zeka logo arama servisini teklif et
-      const confirmAi = confirm(
-        `Popüler veritabanından ${newlyMatchedCount} adet logo başarıyla eşleştirildi. \n\nHâlâ logosu bulunamayan ${missingLogoNames.length} adet kanal için Gemini Yapay Zekası ile internetten logo görseli aransın mı?`
-      );
+      setConfirmDialog({
+        title: "Yapay Zeka ile Logo Ara",
+        message: `Popüler veritabanından ${newlyMatchedCount} adet logo başarıyla eşleştirildi. Hâlâ logosu bulunamayan ${missingLogoNames.length} adet kanal için Gemini Yapay Zekası ile internetten logo görseli aransın mı?`,
+        onConfirm: async () => {
+          setIsLogoSearching(true);
+          try {
+            const response = await fetch('/api/search-logos', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ channelNames: missingLogoNames }),
+            });
 
-      if (!confirmAi) {
-        onUpdateItems(locallyMatched);
-        setIsLogoSearching(false);
-        return;
-      }
+            const data = await response.json();
+            if (!response.ok) {
+              throw new Error(data.error || 'Yapay zeka logo araması başarısız oldu.');
+            }
 
-      // Yapay zeka ile ara
-      const response = await fetch('/api/search-logos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channelNames: missingLogoNames }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Yapay zeka logo araması başarısız oldu.');
-      }
-
-      if (data.logos && Array.isArray(data.logos)) {
-        const logoMap = new Map<string, string>();
-        data.logos.forEach((item: any) => {
-          if (item.name && item.logo && item.logo.trim() !== "") {
-            logoMap.set(item.name.toLowerCase().trim(), item.logo);
-          }
-        });
-
-        let aiMatchedCount = 0;
-        const fullyEnriched = locallyMatched.map(item => {
-          if (!item.logo || item.logo.trim() === "") {
-            const cleanName = item.name.toLowerCase().trim();
-            let matchedLogo = logoMap.get(cleanName);
-            if (!matchedLogo) {
-              for (const [nameKey, urlVal] of logoMap.entries()) {
-                if (cleanName.includes(nameKey) || nameKey.includes(cleanName)) {
-                  matchedLogo = urlVal;
-                  break;
+            if (data.logos && Array.isArray(data.logos)) {
+              const logoMap = new Map<string, string>();
+              data.logos.forEach((item: any) => {
+                if (item.name && item.logo && item.logo.trim() !== "") {
+                  logoMap.set(item.name.toLowerCase().trim(), item.logo);
                 }
-              }
-            }
+              });
 
-            if (matchedLogo) {
-              aiMatchedCount++;
-              return { ...item, logo: matchedLogo };
+              let aiMatchedCount = 0;
+              const fullyEnriched = locallyMatched.map(item => {
+                if (!item.logo || item.logo.trim() === "") {
+                  const cleanName = item.name.toLowerCase().trim();
+                  let matchedLogo = logoMap.get(cleanName);
+                  if (!matchedLogo) {
+                    for (const [nameKey, urlVal] of logoMap.entries()) {
+                      if (cleanName.includes(nameKey) || nameKey.includes(cleanName)) {
+                        matchedLogo = urlVal;
+                        break;
+                      }
+                    }
+                  }
+
+                  if (matchedLogo) {
+                    aiMatchedCount++;
+                    return { ...item, logo: matchedLogo };
+                  }
+                }
+                return item;
+              });
+
+              onUpdateItems(fullyEnriched);
+              alert(`Logo Arama Başarıyla Tamamlandı!\n\n- Popüler Veritabanından Bulunan: ${newlyMatchedCount}\n- Yapay Zeka ile İnternetten Bulunan: ${aiMatchedCount}\n\nToplam ${newlyMatchedCount + aiMatchedCount} adet kanala yeni logo atanmıştır.`);
+            } else {
+              onUpdateItems(locallyMatched);
+              alert(`Popüler veritabanından ${newlyMatchedCount} logo eklendi. Yapay zeka araması ek sonuç bulamadı.`);
             }
+          } catch (err: any) {
+            alert(`Logo arama servisinde bir hata oluştu: ${err.message}`);
+          } finally {
+            setIsLogoSearching(false);
           }
-          return item;
-        });
-
-        onUpdateItems(fullyEnriched);
-        alert(`Logo Arama Başarıyla Tamamlandı!\n\n- Popüler Veritabanından Bulunan: ${newlyMatchedCount}\n- Yapay Zeka ile İnternetten Bulunan: ${aiMatchedCount}\n\nToplam ${newlyMatchedCount + aiMatchedCount} adet kanala yeni logo atanmıştır.`);
-      } else {
-        onUpdateItems(locallyMatched);
-        alert(`Popüler veritabanından ${newlyMatchedCount} logo eklendi. Yapay zeka araması ek sonuç bulamadı.`);
-      }
+        }
+      });
     } catch (err: any) {
       alert(`Logo arama servisinde bir hata oluştu: ${err.message}`);
-    } finally {
       setIsLogoSearching(false);
     }
   };
 
   const handleClearAll = () => {
-    if (confirm('Tüm listeyi temizlemek istediğinizden emin misiniz?')) {
-      onUpdateItems([]);
-    }
-  };
-
-  // Link Autodetect, Test, and Refresh Service (Gemini + Public Repositories + Live stream validation)
-  const handleUpdateStreamLinks = async () => {
-    if (items.length === 0) {
-      alert('Link güncellemesi yapmak için listenizde en az bir kanal bulunmalıdır.');
-      return;
-    }
-
-    setIsUpdatingLinks(true);
-    setLinkUpdateProgress({
-      total: items.length,
-      processed: 0,
-      updated: 0,
-      verified: 0,
-      failed: 0,
-      currentChannel: 'Sistem hazırlanıyor...'
+    setConfirmDialog({
+      title: "Tüm Listeyi Temizle",
+      message: "Tüm listeyi temizlemek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
+      onConfirm: () => {
+        onUpdateItems([]);
+      }
     });
-
-    try {
-      const response = await fetch('/api/update-stream-links', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playlistItems: items })
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Yayın linkleri güncellenemedi.');
-      }
-
-      if (data.updatedItems && Array.isArray(data.updatedItems)) {
-        onUpdateItems(data.updatedItems);
-        setLinkUpdateProgress({
-          total: data.stats.total,
-          processed: data.stats.processed,
-          updated: data.stats.updated,
-          verified: data.stats.verified,
-          failed: data.stats.failed,
-          currentChannel: 'Güncelleme tamamlandı!'
-        });
-        
-        alert(`Yayın Linkleri Başarıyla Güncellendi!\n\n- Toplam Kanal: ${data.stats.total}\n- Taranan: ${data.stats.processed}\n- Başarıyla Güncellenen: ${data.stats.updated} yeni link\n- Çalışır Durumda Doğrulanan: ${data.stats.verified}\n- Çevrimdışı/Hatalı: ${data.stats.failed}`);
-      }
-    } catch (err: any) {
-      alert(`Link güncelleme hatası: ${err.message}`);
-    } finally {
-      setIsUpdatingLinks(false);
-      setLinkUpdateProgress(null);
-    }
   };
 
   // Same-device IPTV loading functions
@@ -966,24 +920,9 @@ export default function M3uListPreview({
               <span>Logo Bul & Eşle</span>
             </button>
 
-            {/* Linkleri Güncelle (M3U8 Search and test) */}
-            <button
-              onClick={handleUpdateStreamLinks}
-              disabled={isUpdatingLinks || items.length === 0}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold rounded flex items-center space-x-1.5 transition cursor-pointer shadow-lg"
-              title="Kanalların en güncel canlı yayın linklerini (m3u8) internetten ve yapay zekadan arar, test eder ve günceller"
-            >
-              {isUpdatingLinks ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              <span>Linkleri Güncelle</span>
-            </button>
-
             {/* Clear All Channels Button */}
             <button
-              onClick={() => {
-                if (confirm('Mevcut çalma listesindeki tüm kanalları silmek istediğinizden emin misiniz?')) {
-                  onUpdateItems([]);
-                }
-              }}
+              onClick={handleClearAll}
               disabled={items.length === 0}
               className="px-3.5 py-1.5 bg-rose-950/20 hover:bg-rose-900/30 border border-rose-900/30 hover:border-rose-800/50 text-rose-400 disabled:opacity-30 disabled:hover:bg-rose-950/10 text-xs font-bold rounded flex items-center space-x-1.5 transition cursor-pointer"
               title="Aktif çalma listesindeki tüm kanalları temizler"
@@ -1373,91 +1312,6 @@ export default function M3uListPreview({
             </div>
           )}
         </div>
-
-        {/* Bulut Otomatik Yayın ve Canlı Senkronizasyon */}
-        <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 shadow-xl flex flex-col space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <h3 className="text-white font-bold text-sm uppercase tracking-widest text-indigo-400 flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-indigo-400 fill-current animate-pulse" />
-                Bulut Otomatik Yayın & Senkronizasyon
-              </h3>
-              <p className="text-[10px] text-slate-500 leading-relaxed">
-                Bu uygulamadaki her değişiklik, otomatik olarak canlı güncelleme sunucusu ve yayım adresiniz olan <b>https://ozelm3u-listesi-olusturucu.ai.studio</b> üzerinde anında paylaşılır.
-              </p>
-            </div>
-            <span className="flex h-2.5 w-2.5 relative shrink-0" title="Canlı Yayın Bağlantısı Aktif">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-            </span>
-          </div>
-
-          <div className="bg-slate-900/60 p-3.5 rounded-lg border border-slate-850 space-y-3">
-            <div className="flex flex-col sm:flex-row justify-between text-xs gap-2">
-              <div className="space-y-1">
-                <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">BAĞLANTI ADRESİ (HOST):</span>
-                <a 
-                  href="https://ozelm3u-listesi-olusturucu.ai.studio" 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="text-indigo-400 hover:text-indigo-300 font-semibold underline break-all flex items-center gap-1"
-                >
-                  https://ozelm3u-listesi-olusturucu.ai.studio
-                </a>
-              </div>
-              <div className="space-y-1 sm:text-right shrink-0">
-                <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">SENKRONİZASYON DURUMU:</span>
-                <span className="inline-flex items-center gap-1.5 text-emerald-400 font-bold bg-emerald-950/40 border border-emerald-900/30 px-2 py-0.5 rounded text-[10px] font-mono">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  ONLINE & EŞLEŞTİ
-                </span>
-              </div>
-            </div>
-
-            <div className="border-t border-slate-800/40 pt-3 flex flex-col sm:flex-row justify-between items-center gap-3">
-              <span className="text-[10px] text-slate-500 font-mono">
-                Son Paylaşım/Yayın: <span className="text-slate-300 font-bold">{lastPublishedTime}</span>
-              </span>
-
-              <button
-                onClick={async () => {
-                  setIsCloudPublishing(true);
-                  setCloudPublishSuccess(false);
-                  
-                  // Simulate deployment payload upload with 1s delay
-                  setTimeout(() => {
-                    setIsCloudPublishing(false);
-                    setCloudPublishSuccess(true);
-                    const now = new Date();
-                    const timestamp = `${now.toLocaleDateString('tr-TR')} ${now.toLocaleTimeString('tr-TR')}`;
-                    setLastPublishedTime(timestamp);
-                    localStorage.setItem('streamlink_last_published', timestamp);
-                  }, 1200);
-                }}
-                disabled={isCloudPublishing || items.length === 0}
-                className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-45 text-white font-bold rounded-lg text-xs transition flex items-center justify-center space-x-1.5 cursor-pointer shadow border-b-2 border-indigo-800 active:border-b-0 active:translate-y-0.5"
-              >
-                {isCloudPublishing ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
-                    <span>Buluta Dağıtılıyor...</span>
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Canlı Yayını Şimdi Dağıt</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {cloudPublishSuccess && (
-              <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 rounded-lg p-2.5 text-center text-[11px] font-medium animate-fade-in">
-                🎉 Değişiklikleriniz başarıyla derlendi ve <b>https://ozelm3u-listesi-olusturucu.ai.studio</b> adresinde canlı olarak yayına sunuldu!
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* Edit Item Modal Backdrop overlay */}
@@ -1744,57 +1598,31 @@ export default function M3uListPreview({
         </div>
       )}
 
-      {/* LINK UPDATE REAL-TIME PROGRESS OVERLAY MODAL */}
-      {isUpdatingLinks && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-6 animate-scale-up">
-            <div className="flex items-center space-x-3.5 border-b border-slate-850 pb-4">
-              <div className="bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 text-emerald-400">
-                <RefreshCw className="w-5 h-5 animate-spin" />
-              </div>
-              <div className="space-y-0.5">
-                <h3 className="text-white font-bold text-sm">Canlı Yayın Linkleri Güncelleniyor</h3>
-                <p className="text-[11px] text-slate-500">M3U/M3U8 yayınları taranıyor ve test ediliyor...</p>
-              </div>
+      {/* Custom Confirmation Modal */}
+      {confirmDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 max-w-sm w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center space-x-3 text-amber-500">
+              <HelpCircle className="w-6 h-6 shrink-0" />
+              <h3 className="text-sm font-bold text-slate-100">{confirmDialog.title}</h3>
             </div>
-
-            <div className="space-y-4">
-              {/* Progress values */}
-              <div className="grid grid-cols-2 gap-2.5">
-                <div className="bg-slate-950/40 border border-slate-850/60 rounded-xl p-3 text-center space-y-1">
-                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Güncellenen</span>
-                  <span className="text-lg font-mono font-bold text-emerald-400">{linkUpdateProgress?.updated || 0}</span>
-                </div>
-                <div className="bg-slate-950/40 border border-slate-850/60 rounded-xl p-3 text-center space-y-1">
-                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Doğrulanan</span>
-                  <span className="text-lg font-mono font-bold text-blue-400">{linkUpdateProgress?.verified || 0}</span>
-                </div>
-              </div>
-
-              {/* Status information */}
-              <div className="bg-slate-950 border border-slate-850 rounded-xl p-3.5 space-y-2 text-xs">
-                <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold font-mono">
-                  <span>İşlenen Kanallar</span>
-                  <span>%{Math.min(100, Math.round(((linkUpdateProgress?.processed || 0) / (linkUpdateProgress?.total || 1)) * 100))} ({linkUpdateProgress?.processed || 0} / {linkUpdateProgress?.total || 0})</span>
-                </div>
-                
-                {/* Progress bar */}
-                <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-850">
-                  <div 
-                    className="bg-emerald-500 h-full transition-all duration-300 rounded-full"
-                    style={{ width: `${Math.min(100, Math.round(((linkUpdateProgress?.processed || 0) / (linkUpdateProgress?.total || 1)) * 100))}%` }}
-                  />
-                </div>
-
-                <div className="flex items-center space-x-1.5 text-[10px] text-slate-400 mt-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
-                  <span className="truncate max-w-[280px]">Mevcut: <span className="text-slate-300 font-bold">{linkUpdateProgress?.currentChannel || 'Aranıyor...'}</span></span>
-                </div>
-              </div>
-
-              <p className="text-[10px] text-slate-400 leading-relaxed text-center">
-                İnternet tarayıcıları, Github IPTV depoları ve Gemini AI ile en güncel, kesintisiz çalışan yayın linkleri taranmaktadır. Lütfen bu pencereyi kapatmayın.
-              </p>
+            <p className="text-xs text-slate-400 leading-relaxed">{confirmDialog.message}</p>
+            <div className="flex items-center justify-end space-x-2 pt-2">
+              <button
+                onClick={() => setConfirmDialog(null)}
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-slate-350 text-[11px] font-bold rounded transition cursor-pointer"
+              >
+                İptal
+              </button>
+              <button
+                onClick={() => {
+                  confirmDialog.onConfirm();
+                  setConfirmDialog(null);
+                }}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold rounded transition cursor-pointer"
+              >
+                Onayla
+              </button>
             </div>
           </div>
         </div>
